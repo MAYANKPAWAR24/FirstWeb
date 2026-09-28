@@ -51,7 +51,7 @@ function clearSessionCookie(res) {
 async function jsonbin(method, record) {
   const binId = process.env.JSONBIN_BIN_ID;
   const masterKey = process.env.JSONBIN_MASTER_KEY;
-  if (!binId || !masterKey) throw new Error('JSONBin environment variables are not configured');
+  if (!binId || !masterKey) throw new Error('JSONBIN_CONFIG_MISSING');
 
   const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}${method === 'GET' ? '/latest' : ''}`, {
     method,
@@ -61,7 +61,7 @@ async function jsonbin(method, record) {
     },
     ...(method === 'PUT' ? { body: JSON.stringify(record) } : {}),
   });
-  if (!response.ok) throw new Error(`JSONBin request failed (${response.status})`);
+  if (!response.ok) throw new Error(`JSONBIN_HTTP_${response.status}`);
   const result = await response.json();
   return result.record;
 }
@@ -128,6 +128,9 @@ export default async function handler(req, res) {
 
       if (action === 'login') {
         const record = await readRecord();
+        if (!record.__adminAuth && !process.env.PORTFOLIO_ADMIN_PASSWORD) {
+          return send(res, 503, { error: 'Admin password is not configured for this Vercel deployment.' });
+        }
         const valid = record.__adminAuth
           ? passwordMatches(password ?? '', record.__adminAuth)
           : Boolean(process.env.PORTFOLIO_ADMIN_PASSWORD)
@@ -207,6 +210,13 @@ export default async function handler(req, res) {
     res.setHeader('Allow', 'GET, POST, PUT, OPTIONS');
     return send(res, 405, { error: 'Method not allowed' });
   } catch (error) {
+    const errorCode = error instanceof Error ? error.message : '';
+    if (errorCode === 'JSONBIN_CONFIG_MISSING') {
+      return send(res, 503, { error: 'Cloud storage is not configured. Add JSONBIN_BIN_ID and JSONBIN_MASTER_KEY to Vercel Environment Variables, then redeploy.' });
+    }
+    if (errorCode === 'JSONBIN_HTTP_401' || errorCode === 'JSONBIN_HTTP_403') {
+      return send(res, 502, { error: 'JSONBin rejected its configured credentials. Update JSONBIN_MASTER_KEY in Vercel and redeploy.' });
+    }
     console.error('Portfolio API error:', error);
     return send(res, 502, { error: 'Cloud service unavailable' });
   }

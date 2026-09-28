@@ -67,9 +67,9 @@ export default function AdminPanel({ open, onClose, sectionOrder, onSectionOrder
                 sounds.error();
                 notify('Incorrect password', 'error');
               }
-            } catch {
+            } catch (error) {
               sounds.error();
-              notify('Could not connect to cloud admin authentication', 'error');
+              notify(error instanceof Error ? error.message : 'Could not connect to cloud admin authentication', 'error');
             }
           }}
           onClose={onClose}
