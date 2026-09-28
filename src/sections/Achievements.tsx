@@ -1,9 +1,11 @@
+import { useEffect } from 'react';
 import { sounds } from '@/lib/sound';
 import { formatDate } from '@/lib/utils';
 import type { Achievement } from '@/lib/types';
 
 interface AchievementsProps {
   achievements: Achievement[];
+  searchTarget?: string | null;
 }
 
 const NODE_COLORS = ['timeline-node', 'timeline-node-purple', 'timeline-node-rose'];
@@ -21,9 +23,18 @@ const ACHIEVEMENT_ICONS: Record<string, string> = {
   Mic: '🎤',
   Trophy: '⭐',
   Camera: '📷',
+  Certificate: '📜',
 };
 
-export default function Achievements({ achievements }: AchievementsProps) {
+export default function Achievements({ achievements, searchTarget }: AchievementsProps) {
+  useEffect(() => {
+    if (!searchTarget) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`search-target-achievement-${searchTarget}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchTarget]);
+
   const sorted = [...achievements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
@@ -52,6 +63,7 @@ export default function Achievements({ achievements }: AchievementsProps) {
                 return (
                   <div
                     key={item.id}
+                    id={`search-target-achievement-${item.id}`}
                     className={`reveal relative flex items-start gap-6 sm:gap-0 ${isLeft ? 'sm:flex-row' : 'sm:flex-row-reverse'}`}
                     style={{ transitionDelay: `${i * 80}ms` }}
                   >

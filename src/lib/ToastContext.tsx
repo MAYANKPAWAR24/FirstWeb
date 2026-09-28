@@ -49,21 +49,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 function ToastContainer({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: string) => void }) {
   return (
-    <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none">
+    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-3 pointer-events-none sm:bottom-6 sm:right-6">
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto flex items-center gap-3 rounded-2xl px-5 py-3.5 backdrop-blur-2xl border shadow-2xl min-w-[280px] max-w-sm toast-enter
-            ${t.type === 'success' ? 'bg-emerald-500/15 border-emerald-400/30 text-emerald-100' : ''}
-            ${t.type === 'error' ? 'bg-rose-500/15 border-rose-400/30 text-rose-100' : ''}
-            ${t.type === 'info' ? 'bg-cyan-500/15 border-cyan-400/30 text-cyan-100' : ''}
+          className={`pointer-events-auto flex items-center gap-3 rounded-xl border px-5 py-3.5 shadow-xl min-w-[min(280px,calc(100vw-2rem))] max-w-sm toast-enter
+            ${t.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-950' : ''}
+            ${t.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-950' : ''}
+            ${t.type === 'info' ? 'bg-sky-50 border-sky-200 text-sky-950' : ''}
           `}
         >
           <span className="text-lg">
             {t.type === 'success' ? '✓' : t.type === 'error' ? '✕' : 'ℹ'}
           </span>
           <span className="text-sm font-medium leading-tight">{t.message}</span>
-          <button onClick={() => dismiss(t.id)} className="ml-auto text-white/50 hover:text-white transition-colors text-sm">✕</button>
+          <button onClick={() => dismiss(t.id)} className="ml-auto text-slate-500 hover:text-slate-950 transition-colors text-sm" aria-label="Dismiss notification">✕</button>
         </div>
       ))}
     </div>

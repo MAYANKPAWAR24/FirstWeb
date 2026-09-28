@@ -3,14 +3,15 @@ import { gsap } from 'gsap';
 import TiltCard from '@/components/TiltCard';
 import { sounds } from '@/lib/sound';
 import { useToast } from '@/lib/ToastContext';
-import { copyToClipboard, formatDate } from '@/lib/utils';
+import { copyToClipboard, formatDate, lockPageScroll } from '@/lib/utils';
 import type { Poem } from '@/lib/types';
 
 interface LiteratureProps {
   poems: Poem[];
+  searchTarget?: string | null;
 }
 
-type FilterType = 'all' | 'poem' | 'novel';
+type FilterType = 'all' | 'poem' | 'novel' | 'article';
 
 function animateLiteratureDeck(activeItem: HTMLDivElement, activeIndex: number | null) {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -35,10 +36,18 @@ function animateLiteratureDeck(activeItem: HTMLDivElement, activeIndex: number |
   });
 }
 
-export default function Literature({ poems }: LiteratureProps) {
+export default function Literature({ poems, searchTarget }: LiteratureProps) {
   const [filter, setFilter] = useState<FilterType>('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Poem | null>(null);
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    if (!searchTarget) return;
+    setFilter('all');
+    setSearch('');
+    setShowAll(true);
+  }, [searchTarget]);
 
   const filtered = useMemo(() => {
     return poems.filter((p) => {
@@ -48,9 +57,19 @@ export default function Literature({ poems }: LiteratureProps) {
         p.title.toLowerCase().includes(search.toLowerCase()) ||
         p.excerpt.toLowerCase().includes(search.toLowerCase()) ||
         p.category.toLowerCase().includes(search.toLowerCase());
-      return matchType && matchSearch;
+      return p.visible !== false && matchType && matchSearch;
     });
   }, [poems, filter, search]);
+
+  useEffect(() => {
+    if (!searchTarget || !showAll) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`search-target-literature-${searchTarget}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchTarget, showAll, filtered.length]);
+
+  const displayed = filtered.slice(0, showAll ? filtered.length : 5);
 
   return (
     <section id="literature" className="relative py-24 px-4 sm:px-6">
@@ -66,16 +85,16 @@ export default function Literature({ poems }: LiteratureProps) {
         {/* Controls */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-10 reveal">
           <div className="flex items-center gap-2">
-            {(['all', 'poem', 'novel'] as FilterType[]).map((f) => (
+            {(['all', 'poem', 'novel', 'article'] as FilterType[]).map((f) => (
               <button
                 key={f}
-                onClick={() => { sounds.click(); setFilter(f); }}
+                onClick={() => { sounds.click(); setFilter(f); setShowAll(false); }}
                 onMouseEnter={() => sounds.hover()}
                 className={`px-5 py-2 rounded-xl text-sm font-medium transition-all capitalize
                   ${filter === f ? 'btn-premium text-white' : 'glass text-white/50 hover:text-white/80'}
                 `}
               >
-                {f === 'all' ? 'All Works' : `${f}s`}
+                  {f === 'all' ? 'All' : f === 'poem' ? 'Poems' : f === 'novel' ? 'Novels' : 'Articles'}
               </button>
             ))}
           </div>
@@ -83,7 +102,7 @@ export default function Literature({ poems }: LiteratureProps) {
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setShowAll(false); }}
               placeholder="Search writings..."
               className="premium-input rounded-xl px-4 py-2 text-sm w-full sm:w-64"
             />
@@ -91,13 +110,14 @@ export default function Literature({ poems }: LiteratureProps) {
         </div>
 
         {/* Grid */}
-        {filtered.length === 0 ? (
+        {displayed.length === 0 ? (
           <div className="text-center py-20 text-white/40 text-sm">No works found. Try a different search.</div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filtered.map((poem, i) => (
+            {displayed.map((poem, i) => (
               <div
                 key={poem.id}
+                id={`search-target-literature-${poem.id}`}
                 className="reveal literature-deck-item"
                 style={{ transitionDelay: `${i * 60}ms` }}
                 onMouseEnter={(event) => animateLiteratureDeck(event.currentTarget, i)}
@@ -110,12 +130,12 @@ export default function Literature({ poems }: LiteratureProps) {
                       <div className="absolute inset-0 bg-black/20" />
                       <div className="absolute inset-0 flex items-center justify-center">
                         <span className="text-6xl opacity-30 font-display font-bold">
-                          {poem.type === 'poem' ? '✦' : '❖'}
+                          {poem.type === 'poem' ? '✦' : poem.type === 'article' ? '▤' : '❖'}
                         </span>
                       </div>
                       <div className="absolute top-3 left-3">
                         <span className="literature-cover-badge px-3 py-1 rounded-full bg-black/30 backdrop-blur-md text-xs font-medium text-white/90">
-                          {poem.type === 'poem' ? 'Poem' : 'Novel'}
+                          {poem.type === 'poem' ? 'Poem' : poem.type === 'article' ? 'Article' : 'Novel'}
                         </span>
                       </div>
                       <div className="absolute top-3 right-3">
@@ -140,6 +160,13 @@ export default function Literature({ poems }: LiteratureProps) {
             ))}
           </div>
         )}
+        {filtered.length > 5 && (
+          <div className="mt-8 flex justify-center">
+            <button type="button" onClick={() => setShowAll((current) => !current)} className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800">
+              {showAll ? 'SHOW LESS' : 'SEE ALL'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Reading Modal */}
@@ -149,20 +176,18 @@ export default function Literature({ poems }: LiteratureProps) {
 }
 
 function ReadingModal({ poem, onClose }: { poem: Poem; onClose: () => void }) {
-  const [zen, setZen] = useState(false);
   const [progress, setProgress] = useState(0);
   const { notify } = useToast();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
-      if (e.key === 'z' || e.key === 'Z') { sounds.toggle(); setZen((z) => !z); }
     };
     window.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
+    const unlockScroll = lockPageScroll();
     return () => {
       window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
+      unlockScroll();
     };
   }, [onClose]);
 
@@ -206,26 +231,18 @@ function ReadingModal({ poem, onClose }: { poem: Poem; onClose: () => void }) {
       </div>
 
       <div
-        className={`relative w-full max-w-2xl max-h-[88vh] glass-strong rounded-3xl overflow-hidden animate-scale-in flex flex-col ${zen ? 'zen-mode' : ''}`}
+        className="relative w-full max-w-2xl max-h-[88vh] glass-strong rounded-3xl overflow-hidden animate-scale-in flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className={`px-6 py-4 border-b border-white/10 flex items-center justify-between ${zen ? 'hidden' : ''}`}>
+        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className={`px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-br ${poem.coverGradient} text-white`}>
-              {poem.type === 'poem' ? 'Poem' : 'Novel'}
+              {poem.type === 'poem' ? 'Poem' : poem.type === 'article' ? 'Article' : 'Novel'}
             </span>
             <span className="text-xs text-white/40">{poem.category}</span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => { sounds.toggle(); setZen(!zen); }}
-              onMouseEnter={() => sounds.hover()}
-              className="w-9 h-9 rounded-xl glass flex items-center justify-center text-white/60 hover:text-cyan-300 transition-colors text-sm"
-              title="Zen Mode (Z)"
-            >
-              {zen ? 'teilen' : 'za'}
-            </button>
             <button
               onClick={handleCopy}
               onMouseEnter={() => sounds.hover()}
@@ -254,35 +271,24 @@ function ReadingModal({ poem, onClose }: { poem: Poem; onClose: () => void }) {
         </div>
 
         {/* Cover banner */}
-        {!zen && (
-          <div className={`h-28 bg-gradient-to-br ${poem.coverGradient} relative`}>
+        <div className={`h-28 bg-gradient-to-br ${poem.coverGradient} relative`}>
             <div className="absolute inset-0 bg-black/20" />
             <div className="absolute bottom-4 left-6">
               <h3 className="literature-copy text-2xl font-bold text-white">{poem.title}</h3>
               <p className="text-sm text-white/70">by {poem.author} · {formatDate(poem.date)}</p>
             </div>
-          </div>
-        )}
+        </div>
 
         {/* Content */}
         <div
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto px-8 py-8 text-left"
+          className="ios-scroll flex-1 overflow-y-auto px-5 py-6 text-left sm:px-8 sm:py-8"
         >
-          {zen && (
-            <h3 className="literature-copy text-3xl font-bold text-white/90 mb-2 text-center">{poem.title}</h3>
-          )}
           <div className="literature-copy text-[15px] sm:text-base text-white/75 whitespace-pre-wrap">
             {poem.content}
           </div>
         </div>
 
-        {/* Zen exit hint */}
-        {zen && (
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 text-xs text-white/30">
-            Press Z to exit Zen Mode
-          </div>
-        )}
       </div>
     </div>
   );

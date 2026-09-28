@@ -1,7 +1,6 @@
 import type { PortfolioData } from './types';
 
 export const seedData: PortfolioData = {
-  adminPassword: 'admin123',
   visitorCount: 1247,
   profile: {
     name: 'MAYANK PAWAR',

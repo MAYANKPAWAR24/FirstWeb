@@ -44,7 +44,7 @@ export function useScrollReveal() {
               trigger: element,
               start: 'top 88%',
               end: 'top 58%',
-              scrub: 0.8,
+              scrub: window.matchMedia('(hover: none)').matches ? false : 0.8,
               invalidateOnRefresh: true,
             },
           });
@@ -70,7 +70,7 @@ export function useScrollReveal() {
         });
       });
 
-      document.querySelectorAll<HTMLElement>('[data-parallax]').forEach((element) => {
+      if (!window.matchMedia('(hover: none)').matches) document.querySelectorAll<HTMLElement>('[data-parallax]').forEach((element) => {
         if (animatedParallax.has(element)) return;
         const section = element.parentElement;
         if (!section) return;

@@ -2,8 +2,13 @@ import { useEffect, useState, useMemo } from 'react';
 import { sounds } from '@/lib/sound';
 import { useData } from '@/lib/DataContext';
 import { useToast } from '@/lib/ToastContext';
-import { formatDate } from '@/lib/utils';
+import { formatDate, lockPageScroll } from '@/lib/utils';
 import type { Certificate, GuestbookEntry } from '@/lib/types';
+import Achievements from '@/sections/Achievements';
+
+interface ExtraProps {
+  searchTarget?: string | null;
+}
 
 const AVATAR_COLORS = [
   'from-cyan-400 to-blue-500',
@@ -13,7 +18,7 @@ const AVATAR_COLORS = [
   'from-amber-400 to-orange-500',
 ];
 
-export default function Extra() {
+export default function Extra({ searchTarget }: ExtraProps) {
   const { data, addGuestbookEntry, isAdmin, deleteGuestbookEntry } = useData();
   const { notify } = useToast();
 
@@ -23,11 +28,25 @@ export default function Extra() {
   const [contactEmail, setContactEmail] = useState('');
   const [contactMsg, setContactMsg] = useState('');
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
+  const [showAllGuestbook, setShowAllGuestbook] = useState(false);
 
   const sortedGuestbook = useMemo(
-    () => [...data.guestbook].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    () => data.guestbook.filter((entry) => entry.approved !== false).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [data.guestbook]
   );
+
+  useEffect(() => {
+    if (!showAllGuestbook) return;
+    const unlockScroll = lockPageScroll();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowAllGuestbook(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      unlockScroll();
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [showAllGuestbook]);
 
   const handleSignGuestbook = () => {
     if (!name.trim() || !message.trim()) {
@@ -110,11 +129,11 @@ export default function Extra() {
               </div>
 
               {/* Entries */}
-              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
+              <div className="ios-scroll space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
                 {sortedGuestbook.length === 0 ? (
                   <p className="text-center text-white/30 text-sm py-8">Be the first to sign!</p>
                 ) : (
-                  sortedGuestbook.map((entry, i) => (
+                  sortedGuestbook.slice(0, 5).map((entry, i) => (
                     <div key={entry.id} className="glass rounded-2xl p-4 group">
                       <div className="flex items-start gap-3">
                         <div className={`shrink-0 w-10 h-10 rounded-full bg-gradient-to-br ${AVATAR_COLORS[i % AVATAR_COLORS.length]} flex items-center justify-center font-display font-bold text-navy-deep text-sm`}>
@@ -140,6 +159,11 @@ export default function Extra() {
                   ))
                 )}
               </div>
+              {sortedGuestbook.length > 5 && (
+                <button type="button" onClick={() => setShowAllGuestbook(true)} className="btn-premium mt-5 w-full rounded-xl py-3 text-xs font-semibold tracking-[0.16em] text-slate-800">
+                  SEE ALL ({sortedGuestbook.length})
+                </button>
+              )}
             </div>
           </div>
 
@@ -206,13 +230,13 @@ export default function Extra() {
             <p className="text-sm text-white/50">A selection of completed courses and credentials.</p>
           </div>
 
-          {data.certificates.length === 0 ? (
+          {data.certificates.filter((certificate) => certificate.visible !== false).length === 0 ? (
             <div className="glass-card rounded-2xl px-5 py-8 text-center text-sm text-white/50">
               Certificates will appear here soon.
             </div>
           ) : (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {data.certificates.map((certificate) => (
+              {data.certificates.filter((certificate) => certificate.visible !== false).map((certificate) => (
                 <button
                   key={certificate.id}
                   type="button"
@@ -239,6 +263,8 @@ export default function Extra() {
           )}
         </div>
 
+        <Achievements achievements={data.achievements.filter((achievement) => achievement.visible !== false)} searchTarget={searchTarget} />
+
         {/* Footer */}
         <div className="text-center mt-20 pt-10 border-t border-white/5">
           <p className="text-sm text-white/30">
@@ -249,20 +275,42 @@ export default function Extra() {
       {selectedCertificate && (
         <CertificateLightbox certificate={selectedCertificate} onClose={() => setSelectedCertificate(null)} />
       )}
+      {showAllGuestbook && (
+        <div className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowAllGuestbook(false)}>
+          <div className="glass-strong ios-scroll relative max-h-[85dvh] w-full max-w-2xl overflow-y-auto rounded-2xl p-5 sm:p-7" role="dialog" aria-modal="true" aria-label="All approved guestbook messages" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-5 flex items-center justify-between gap-4">
+              <h3 className="font-display text-xl font-bold">Visitor Wall</h3>
+              <button type="button" onClick={() => setShowAllGuestbook(false)} className="glass flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" aria-label="Close visitor wall">×</button>
+            </div>
+            <div className="space-y-3">
+              {sortedGuestbook.map((entry, index) => (
+                <div key={entry.id} className="glass-card rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${AVATAR_COLORS[index % AVATAR_COLORS.length]} font-bold text-slate-900`}>{entry.avatar}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold">{entry.name}</span><span className="text-xs text-slate-500">{formatDate(entry.date)}</span></div>
+                      <p className="mt-1 text-sm text-slate-600">{entry.message}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
 function CertificateLightbox({ certificate, onClose }: { certificate: Certificate; onClose: () => void }) {
   useEffect(() => {
-    const previousOverflow = document.body.style.overflow;
+    const unlockScroll = lockPageScroll();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
-    document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlockScroll();
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [onClose]);
@@ -274,7 +322,7 @@ function CertificateLightbox({ certificate, onClose }: { certificate: Certificat
       role="presentation"
     >
       <div
-        className="glass-strong w-full max-w-4xl overflow-hidden rounded-2xl p-3 sm:p-5"
+        className="glass-strong ios-scroll max-h-[90dvh] w-full max-w-4xl overflow-y-auto rounded-2xl p-3 sm:p-5"
         role="dialog"
         aria-modal="true"
         aria-label={certificate.title}

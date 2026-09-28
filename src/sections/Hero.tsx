@@ -23,7 +23,7 @@ export default function Hero({ profile, visitorCount, onNavigate }: HeroProps) {
   return (
     <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden px-4 sm:px-6 pt-24 pb-16">
       <div className="hero-depth hero-depth-back" data-parallax="0.12" aria-hidden="true">
-        <span>01</span>
+        <span>MEGISTO</span>
       </div>
       <div className="hero-depth hero-depth-front" data-parallax="0.24" aria-hidden="true" />
       <HeroAtmosphere />

@@ -35,3 +35,37 @@ export function copyToClipboard(text: string): Promise<void> {
     resolve();
   });
 }
+
+let scrollLockCount = 0;
+let lockedScrollY = 0;
+let previousBodyStyles: Pick<CSSStyleDeclaration, 'position' | 'top' | 'left' | 'right' | 'width'> | null = null;
+
+export function lockPageScroll() {
+  if (scrollLockCount === 0) {
+    lockedScrollY = window.scrollY;
+    previousBodyStyles = {
+      position: document.body.style.position,
+      top: document.body.style.top,
+      left: document.body.style.left,
+      right: document.body.style.right,
+      width: document.body.style.width,
+    };
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${lockedScrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+  }
+  scrollLockCount += 1;
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    scrollLockCount = Math.max(0, scrollLockCount - 1);
+    if (scrollLockCount !== 0 || !previousBodyStyles) return;
+    Object.assign(document.body.style, previousBodyStyles);
+    previousBodyStyles = null;
+    window.scrollTo(0, lockedScrollY);
+  };
+}

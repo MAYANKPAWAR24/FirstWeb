@@ -1,21 +1,58 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Music2 } from 'lucide-react';
 import { sounds } from '@/lib/sound';
+import { lockPageScroll } from '@/lib/utils';
 import type { MediaItem } from '@/lib/types';
 
 interface MediaProps {
   items: MediaItem[];
+  searchTarget?: string | null;
 }
 
 type MediaFilter = 'all' | 'photo' | 'video' | 'music';
 
-export default function Media({ items }: MediaProps) {
+function getVideoEmbedUrl(rawUrl: string) {
+  try {
+    const url = new URL(rawUrl);
+    const videoId = url.hostname === 'youtu.be'
+      ? url.pathname.slice(1)
+      : url.hostname.includes('youtube.com')
+        ? url.searchParams.get('v') ?? url.pathname.match(/\/embed\/([^/]+)/)?.[1]
+        : null;
+    return videoId ? `https://www.youtube.com/embed/${videoId}` : rawUrl;
+  } catch {
+    return rawUrl;
+  }
+}
+
+function isDirectVideoUrl(url: string) {
+  return /\.(mp4|webm|ogg)(?:[?#]|$)/i.test(url);
+}
+
+export default function Media({ items, searchTarget }: MediaProps) {
   const [filter, setFilter] = useState<MediaFilter>('all');
   const [lightbox, setLightbox] = useState<MediaItem | null>(null);
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    if (!searchTarget) return;
+    setFilter('all');
+    setShowAll(true);
+  }, [searchTarget]);
 
   const filtered = useMemo(() => {
-    return items.filter((m) => filter === 'all' || m.type === filter);
+    return items.filter((m) => m.visible !== false && (filter === 'all' || m.type === filter));
   }, [items, filter]);
+
+  useEffect(() => {
+    if (!searchTarget || !showAll) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`search-target-media-${searchTarget}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchTarget, showAll, filtered.length]);
+
+  const displayed = filtered.slice(0, showAll ? filtered.length : 5);
 
   return (
     <section id="media" className="relative py-24 px-4 sm:px-6">
@@ -33,7 +70,7 @@ export default function Media({ items }: MediaProps) {
           {(['all', 'photo', 'video', 'music'] as MediaFilter[]).map((f) => (
             <button
               key={f}
-              onClick={() => { sounds.click(); setFilter(f); }}
+              onClick={() => { sounds.click(); setFilter(f); setShowAll(false); }}
               onMouseEnter={() => sounds.hover()}
               className={`px-6 py-2 rounded-xl text-sm font-medium transition-all capitalize
                 ${filter === f ? 'btn-premium text-white' : 'glass text-white/50 hover:text-white/80'}
@@ -45,13 +82,14 @@ export default function Media({ items }: MediaProps) {
         </div>
 
         {/* Grid */}
-        {filtered.length === 0 ? (
+        {displayed.length === 0 ? (
           <div className="text-center py-20 text-white/40 text-sm">No media found.</div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filtered.map((item, i) => (
+            {displayed.map((item, i) => (
               <div
                 key={item.id}
+                id={`search-target-media-${item.id}`}
                 className={`reveal group ${item.type === 'music' ? '' : 'cursor-pointer'}`}
                 style={{ transitionDelay: `${i * 50}ms` }}
                 onClick={() => {
@@ -114,6 +152,13 @@ export default function Media({ items }: MediaProps) {
             ))}
           </div>
         )}
+        {filtered.length > 5 && (
+          <div className="mt-8 flex justify-center">
+            <button type="button" onClick={() => setShowAll((current) => !current)} className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800">
+              {showAll ? 'SHOW LESS' : 'SEE ALL'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Lightbox */}
@@ -125,6 +170,8 @@ export default function Media({ items }: MediaProps) {
 }
 
 function MediaLightbox({ item, onClose }: { item: MediaItem; onClose: () => void }) {
+  useEffect(() => lockPageScroll(), []);
+
   return (
     <div
       className="fixed inset-0 z-[9000] flex items-center justify-center p-4 animate-fade-in"
@@ -132,7 +179,7 @@ function MediaLightbox({ item, onClose }: { item: MediaItem; onClose: () => void
     >
       <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
       <div
-        className="relative w-full max-w-4xl animate-scale-in"
+        className="ios-scroll relative max-h-[90dvh] w-full max-w-4xl overflow-y-auto animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="glass-strong rounded-3xl overflow-hidden">
@@ -152,10 +199,12 @@ function MediaLightbox({ item, onClose }: { item: MediaItem; onClose: () => void
           <div className="p-4">
             {item.type === 'photo' ? (
               <img src={item.url} alt={item.title} className="w-full rounded-2xl" />
+            ) : item.type === 'video' && isDirectVideoUrl(item.url) ? (
+              <video controls autoPlay playsInline src={item.url} className="max-h-[75dvh] w-full rounded-2xl" />
             ) : item.type === 'video' ? (
               <div className="aspect-video rounded-2xl overflow-hidden">
                 <iframe
-                  src={item.url}
+                  src={getVideoEmbedUrl(item.url)}
                   title={item.title}
                   className="w-full h-full"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

@@ -3,13 +3,11 @@ import { DataProvider, useData } from '@/lib/DataContext';
 import { ToastProvider, useToast } from '@/lib/ToastContext';
 import { sounds, setSoundEnabled, isSoundEnabled } from '@/lib/sound';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
-import { copyToClipboard } from '@/lib/utils';
 import type { SectionId } from '@/lib/types';
-import { loadSectionOrder, saveSectionOrder, type PublicSectionId } from '@/lib/sectionOrder';
+import type { PortfolioSearchResult } from '@/lib/search';
 
 import MagneticCursor from '@/components/MagneticCursor';
 import ReadingProgress from '@/components/ReadingProgress';
-import CommandPalette from '@/components/CommandPalette';
 import Navigation from '@/components/Navigation';
 import AdminPanel from '@/components/AdminPanel';
 import Hero from '@/sections/Hero';
@@ -21,27 +19,24 @@ import FollowMe from '@/sections/FollowMe';
 import Extra from '@/sections/Extra';
 
 function AppContent() {
-  const { data } = useData();
+  const { data, sectionOrder, updateSectionOrder } = useData();
   const { notify } = useToast();
   useScrollReveal();
 
   const [loading, setLoading] = useState(true);
-  const [cmdOpen, setCmdOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
   const [activeSection, setActiveSection] = useState<SectionId>('home');
-  const [sectionOrder, setSectionOrder] = useState<PublicSectionId[]>(loadSectionOrder);
+  const [searchSelection, setSearchSelection] = useState<PortfolioSearchResult | null>(null);
 
   const sectionRenderers = {
     profile: () => <ProfileSection profile={data.profile} />,
-    literature: () => <Literature poems={data.poems} />,
-    media: () => <Media items={data.media} />,
-    study: () => <StudyMaterialSection materials={data.studyMaterials} />,
+    literature: () => <Literature poems={data.poems} searchTarget={searchSelection?.kind === 'literature' ? searchSelection.id : null} />,
+    media: () => <Media items={data.media} searchTarget={searchSelection?.kind === 'media' ? searchSelection.id : null} />,
+    study: () => <StudyMaterialSection materials={data.studyMaterials} searchTarget={searchSelection?.kind === 'study' ? searchSelection.id : null} />,
     follow: () => <FollowMe socials={data.profile.socials} />,
-    extra: () => <Extra />,
+    extra: () => <Extra searchTarget={searchSelection?.kind === 'achievement' ? searchSelection.id : null} />,
   };
-
-  useEffect(() => saveSectionOrder(sectionOrder), [sectionOrder]);
 
   // Loading screen
   useEffect(() => {
@@ -50,21 +45,6 @@ function AppContent() {
       sounds.success();
     }, 1800);
     return () => clearTimeout(t);
-  }, []);
-
-  // Keyboard shortcuts
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        setCmdOpen((o) => !o);
-      }
-      if (e.key === 'Escape') {
-        setCmdOpen(false);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   // Active section tracking via IntersectionObserver
@@ -103,22 +83,6 @@ function AppContent() {
     notify(next ? 'Sound effects enabled' : 'Sound effects muted', 'info');
   }, [soundOn, notify]);
 
-  const handleShare = useCallback(async () => {
-    sounds.click();
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: data.profile.name,
-          text: data.profile.tagline,
-          url: window.location.href,
-        });
-      } catch { /* cancelled */ }
-    } else {
-      await copyToClipboard(window.location.href);
-      notify('Link copied to clipboard');
-    }
-  }, [data.profile, notify]);
-
   if (loading) {
     return <LoadingScreen />;
   }
@@ -137,7 +101,11 @@ function AppContent() {
       {/* Navigation */}
       <Navigation
         onNavigate={handleNavigate}
-        onOpenCommand={() => setCmdOpen(true)}
+        data={data}
+        onSearchSelect={(result) => {
+          setSearchSelection(result);
+          handleNavigate(result.sectionId);
+        }}
         activeSection={activeSection}
         soundOn={soundOn}
         onToggleSound={toggleSound}
@@ -164,19 +132,11 @@ function AppContent() {
       </footer>
 
       {/* Overlays */}
-      <CommandPalette
-        open={cmdOpen}
-        onClose={() => setCmdOpen(false)}
-        onNavigate={handleNavigate}
-        onToggleSound={toggleSound}
-        soundOn={soundOn}
-        onShare={handleShare}
-      />
       <AdminPanel
         open={adminOpen}
         onClose={() => setAdminOpen(false)}
         sectionOrder={sectionOrder}
-        onSectionOrderChange={setSectionOrder}
+        onSectionOrderChange={updateSectionOrder}
       />
     </div>
   );

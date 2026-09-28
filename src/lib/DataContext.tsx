@@ -1,17 +1,47 @@
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import type { PortfolioData, Poem, MediaItem, StudyMaterial, Achievement, Certificate, GuestbookEntry, Profile } from './types';
 import { seedData } from './seedData';
 import { uid } from './utils';
+import {
+  addCloudGuestbookEntry,
+  changeCloudAdminPassword,
+  fetchCloudSnapshot,
+  incrementCloudVisitorCount,
+  loginCloudAdmin,
+  logoutCloudAdmin,
+  saveCloudSnapshot,
+} from './cloudData';
+import { DEFAULT_SECTION_ORDER, loadSectionOrder, saveSectionOrder, type PublicSectionId } from './sectionOrder';
 
 const STORAGE_KEY = 'portfolio_data_v1';
 const VISITOR_KEY = 'portfolio_visitor_counted';
 const SOCIAL_LINKS_MIGRATION_KEY = 'portfolio_social_links_v3';
+const POEM_TYPES = new Set(['poem', 'novel', 'article']);
+const MEDIA_TYPES = new Set(['photo', 'video', 'music']);
+
+function normalizeContentTypes(data: PortfolioData): PortfolioData {
+  return {
+    ...data,
+    poems: data.poems.map((poem) => ({
+      ...poem,
+      type: POEM_TYPES.has(poem.type) ? poem.type : 'poem',
+    })),
+    media: data.media.map((item) => ({
+      ...item,
+      type: MEDIA_TYPES.has(item.type) ? item.type : 'photo',
+    })),
+  };
+}
 
 interface DataContextValue {
   data: PortfolioData;
+  sectionOrder: PublicSectionId[];
+  syncStatus: 'loading' | 'synced' | 'saving' | 'offline' | 'error';
   isAdmin: boolean;
-  loginAdmin: (password: string) => boolean;
-  logoutAdmin: () => void;
+  loginAdmin: (password: string) => Promise<boolean>;
+  logoutAdmin: () => Promise<void>;
+  updateSectionOrder: (order: PublicSectionId[]) => void;
+  resetData: () => void;
   updateProfile: (profile: Profile) => void;
   // Poems
   addPoem: (poem: Omit<Poem, 'id'>) => void;
@@ -35,9 +65,10 @@ interface DataContextValue {
   deleteCertificate: (id: string) => void;
   // Guestbook
   addGuestbookEntry: (entry: Omit<GuestbookEntry, 'id'>) => void;
+  updateGuestbookEntry: (id: string, entry: Partial<GuestbookEntry>) => void;
   deleteGuestbookEntry: (id: string) => void;
   // Admin password
-  setAdminPassword: (pw: string) => void;
+  setAdminPassword: (pw: string) => Promise<void>;
   // Drafts
   saveDraft: (key: string, value: unknown) => void;
   loadDraft: <T,>(key: string) => T | null;
@@ -58,16 +89,18 @@ function loadData(): PortfolioData {
     shouldMigrateSocialLinks = localStorage.getItem(SOCIAL_LINKS_MIGRATION_KEY) !== 'true';
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<PortfolioData>;
+      const parsed = JSON.parse(raw) as Partial<PortfolioData> & { adminPassword?: string };
+      delete parsed.adminPassword;
+      const savedData = parsed;
       const data: PortfolioData = {
         ...seedData,
-        ...parsed,
+        ...savedData,
         profile: {
           ...seedData.profile,
-          ...parsed.profile,
+          ...savedData.profile,
           socials: seedData.profile.socials.map((defaultSocial) => {
             const legacyIcon = defaultSocial.icon === 'Twitter' ? 'Twitter' : defaultSocial.icon;
-            const existing = parsed.profile?.socials?.find((social) => (
+            const existing = savedData.profile?.socials?.find((social) => (
               social.id === defaultSocial.id || social.icon === legacyIcon || social.label === defaultSocial.label
             ));
             const addedPlatform = defaultSocial.id === 'threads' || defaultSocial.id === 'telegram';
@@ -79,7 +112,7 @@ function loadData(): PortfolioData {
               ...existing,
               visible: existing?.visible ?? defaultSocial.visible,
             };
-          }).concat((parsed.profile?.socials ?? []).filter((social) => (
+          }).concat((savedData.profile?.socials ?? []).filter((social) => (
             !seedData.profile.socials.some((defaultSocial) => (
               social.id === defaultSocial.id || social.icon === defaultSocial.icon || social.label === defaultSocial.label
             ))
@@ -94,7 +127,7 @@ function loadData(): PortfolioData {
       data.poems = data.poems.map((poem) => (
         poem.author === 'Aarav Mehta' ? { ...poem, author: 'MAYANK PAWAR' } : poem
       ));
-      return data;
+      return normalizeContentTypes(data);
     }
   } catch {
     // ignore
@@ -112,35 +145,91 @@ function saveData(data: PortfolioData) {
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<PortfolioData>(loadData);
-  const [isAdmin, setIsAdmin] = useState<boolean>(
-    () => sessionStorage.getItem('portfolio_admin') === 'true'
-  );
+  const [sectionOrder, setSectionOrder] = useState<PublicSectionId[]>(loadSectionOrder);
+  const [cloudLoaded, setCloudLoaded] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<DataContextValue['syncStatus']>('loading');
+  const [isAdmin, setIsAdmin] = useState(false);
+  const syncRequestId = useRef(0);
+
+  useEffect(() => {
+    let active = true;
+    fetchCloudSnapshot()
+      .then((snapshot) => {
+        if (!active) return;
+        setData((current) => normalizeContentTypes({
+          ...current,
+          ...snapshot.data,
+          profile: { ...current.profile, ...snapshot.data.profile },
+          poems: snapshot.data.poems ?? current.poems,
+          media: snapshot.data.media ?? current.media,
+          studyMaterials: snapshot.data.studyMaterials ?? current.studyMaterials,
+          achievements: snapshot.data.achievements ?? current.achievements,
+          certificates: snapshot.data.certificates ?? current.certificates,
+          guestbook: snapshot.data.guestbook ?? current.guestbook,
+          visitorCount: snapshot.data.visitorCount ?? current.visitorCount,
+        }));
+        setSectionOrder(snapshot.sectionOrder);
+        setIsAdmin(snapshot.isAdmin);
+        setSyncStatus('synced');
+      })
+      .catch(() => {
+        if (active) setSyncStatus('offline');
+      })
+      .finally(() => {
+        if (active) setCloudLoaded(true);
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     saveData(data);
     try { localStorage.setItem(SOCIAL_LINKS_MIGRATION_KEY, 'true'); } catch { /* Ignore unavailable storage. */ }
-  }, [data]);
+    saveSectionOrder(sectionOrder);
+    if (!cloudLoaded || !isAdmin) return;
+    const requestId = ++syncRequestId.current;
+    setSyncStatus('saving');
+    saveCloudSnapshot(data, sectionOrder)
+      .then(() => { if (requestId === syncRequestId.current) setSyncStatus('synced'); })
+      .catch(() => { if (requestId === syncRequestId.current) setSyncStatus('error'); });
+  }, [data, sectionOrder, cloudLoaded, isAdmin]);
 
   // Increment visitor count once per session
   useEffect(() => {
+    if (!cloudLoaded) return;
     if (!sessionStorage.getItem(VISITOR_KEY)) {
       sessionStorage.setItem(VISITOR_KEY, '1');
       setData((d) => ({ ...d, visitorCount: d.visitorCount + 1 }));
+      incrementCloudVisitorCount()
+        .then(({ visitorCount }) => setData((d) => ({ ...d, visitorCount })))
+        .catch(() => undefined);
     }
-  }, []);
+  }, [cloudLoaded]);
 
-  const loginAdmin = useCallback((password: string) => {
-    if (password === data.adminPassword) {
+  const loginAdmin = useCallback(async (password: string) => {
+    try {
+      await loginCloudAdmin(password);
       setIsAdmin(true);
       sessionStorage.setItem('portfolio_admin', 'true');
       return true;
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Invalid admin password') return false;
+      throw error;
     }
-    return false;
-  }, [data.adminPassword]);
+  }, []);
 
-  const logoutAdmin = useCallback(() => {
+  const logoutAdmin = useCallback(async () => {
     setIsAdmin(false);
     sessionStorage.removeItem('portfolio_admin');
+    try { await logoutCloudAdmin(); } catch { /* Local logout still succeeds if offline. */ }
+  }, []);
+
+  const updateSectionOrder = useCallback((order: PublicSectionId[]) => {
+    setSectionOrder(order);
+  }, []);
+
+  const resetData = useCallback(() => {
+    setData(seedData);
+    setSectionOrder([...DEFAULT_SECTION_ORDER]);
   }, []);
 
   const updateProfile = useCallback((profile: Profile) => {
@@ -211,15 +300,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addGuestbookEntry = useCallback((entry: Omit<GuestbookEntry, 'id'>) => {
-    setData((d) => ({ ...d, guestbook: [{ ...entry, id: uid() }, ...d.guestbook] }));
-  }, []);
+    const newEntry = { ...entry, id: uid(), approved: false };
+    setData((d) => ({ ...d, guestbook: [newEntry, ...d.guestbook] }));
+    if (isAdmin) return;
+    addCloudGuestbookEntry(newEntry)
+      .then(({ entry: savedEntry }) => {
+        setData((d) => ({
+          ...d,
+          guestbook: d.guestbook.map((item) => item.id === newEntry.id ? savedEntry : item),
+        }));
+      })
+      .catch(() => setSyncStatus('error'));
+  }, [isAdmin]);
 
   const deleteGuestbookEntry = useCallback((id: string) => {
     setData((d) => ({ ...d, guestbook: d.guestbook.filter((g) => g.id !== id) }));
   }, []);
 
-  const setAdminPassword = useCallback((pw: string) => {
-    setData((d) => ({ ...d, adminPassword: pw }));
+  const updateGuestbookEntry = useCallback((id: string, entry: Partial<GuestbookEntry>) => {
+    setData((d) => ({ ...d, guestbook: d.guestbook.map((g) => g.id === id ? { ...g, ...entry } : g) }));
+  }, []);
+
+  const setAdminPassword = useCallback(async (pw: string) => {
+    await changeCloudAdminPassword(pw);
   }, []);
 
   const saveDraft = useCallback((key: string, value: unknown) => {
@@ -244,13 +347,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value: DataContextValue = {
-    data, isAdmin, loginAdmin, logoutAdmin, updateProfile,
+    data, sectionOrder, syncStatus, isAdmin, loginAdmin, logoutAdmin, updateSectionOrder, resetData, updateProfile,
     addPoem, updatePoem, deletePoem,
     addMedia, updateMedia, deleteMedia,
     addStudyMaterial, updateStudyMaterial, deleteStudyMaterial,
     addAchievement, updateAchievement, deleteAchievement,
     addCertificate, updateCertificate, deleteCertificate,
-    addGuestbookEntry, deleteGuestbookEntry,
+    addGuestbookEntry, updateGuestbookEntry, deleteGuestbookEntry,
     setAdminPassword, saveDraft, loadDraft, clearDraft,
   };
 

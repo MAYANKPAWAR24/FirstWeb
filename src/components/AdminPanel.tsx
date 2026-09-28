@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Music2 } from 'lucide-react';
+import { AtSign, Eye, EyeOff, Music2 } from 'lucide-react';
 import { useData } from '@/lib/DataContext';
 import { useToast } from '@/lib/ToastContext';
 import { sounds } from '@/lib/sound';
-import { formatDate } from '@/lib/utils';
+import { formatDate, lockPageScroll } from '@/lib/utils';
 import type { Poem, MediaItem, StudyMaterial, Achievement, Certificate, Profile, SocialLink } from '@/lib/types';
 import { PUBLIC_SECTIONS, type PublicSectionId } from '@/lib/sectionOrder';
 
@@ -29,18 +29,14 @@ const TABS: { id: AdminTab; label: string; icon: string }[] = [
 ];
 
 export default function AdminPanel({ open, onClose, sectionOrder, onSectionOrderChange }: AdminPanelProps) {
-  const { data, isAdmin, loginAdmin, logoutAdmin, updateProfile } = useData();
+  const { data, isAdmin, loginAdmin, logoutAdmin, updateProfile, syncStatus } = useData();
   const { notify } = useToast();
   const [password, setPassword] = useState('');
   const [tab, setTab] = useState<AdminTab>('poems');
 
   useEffect(() => {
-    if (open) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
+    if (!open) return;
+    return lockPageScroll();
   }, [open]);
 
   useEffect(() => {
@@ -61,14 +57,19 @@ export default function AdminPanel({ open, onClose, sectionOrder, onSectionOrder
         <AdminLogin
           password={password}
           setPassword={setPassword}
-          onLogin={() => {
-            if (loginAdmin(password)) {
-              sounds.success();
-              notify('Welcome back, Admin');
-              setPassword('');
-            } else {
+          onLogin={async () => {
+            try {
+              if (await loginAdmin(password)) {
+                sounds.success();
+                notify('Welcome back, Admin');
+                setPassword('');
+              } else {
+                sounds.error();
+                notify('Incorrect password', 'error');
+              }
+            } catch {
               sounds.error();
-              notify('Incorrect password', 'error');
+              notify('Could not connect to cloud admin authentication', 'error');
             }
           }}
           onClose={onClose}
@@ -84,6 +85,9 @@ export default function AdminPanel({ open, onClose, sectionOrder, onSectionOrder
               <span className="font-display font-bold text-xs sm:text-sm">MAYANK PAWAR <span className="font-normal text-white/50">· Admin</span></span>
             </div>
             <div className="flex items-center gap-2">
+              <span className="hidden sm:inline text-xs text-white/40" aria-live="polite">
+                {syncStatus === 'loading' ? 'Connecting…' : syncStatus === 'saving' ? 'Syncing…' : syncStatus === 'synced' ? 'Cloud synced' : syncStatus === 'offline' ? 'Cloud unavailable' : 'Sync failed'}
+              </span>
               <button
                 onClick={() => { sounds.click(); onClose(); }}
                 className="px-3 py-1.5 rounded-lg glass text-xs text-white/60 hover:text-white transition-colors"
@@ -102,7 +106,7 @@ export default function AdminPanel({ open, onClose, sectionOrder, onSectionOrder
           {/* Body: sidebar + content */}
           <div className="flex-1 flex overflow-hidden">
             {/* Sidebar */}
-            <div className="w-14 sm:w-56 glass border-r border-white/10 shrink-0 overflow-y-auto py-3">
+            <div className="ios-scroll w-14 shrink-0 overflow-y-auto border-r border-white/10 py-3 glass sm:w-56">
               {TABS.map((t) => (
                 <button
                   key={t.id}
@@ -121,7 +125,7 @@ export default function AdminPanel({ open, onClose, sectionOrder, onSectionOrder
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+            <div className="ios-scroll flex-1 overflow-y-auto p-4 sm:p-8">
               {tab === 'poems' && <PoemsAdmin />}
               {tab === 'media' && <MediaAdmin />}
               {tab === 'study' && <StudyAdmin />}
@@ -152,6 +156,8 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
   socials: SocialLink[];
   onSocialsChange: (socials: SocialLink[]) => void;
 }) {
+  const [newSocial, setNewSocial] = useState({ label: '', url: '' });
+
   const moveSection = (index: number, offset: -1 | 1) => {
     const target = index + offset;
     if (target < 0 || target >= order.length) return;
@@ -161,13 +167,21 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
     sounds.click();
   };
 
+  const addSocial = () => {
+    const label = newSocial.label.trim();
+    const url = newSocial.url.trim();
+    if (!label || !url || !/^https?:\/\//i.test(url)) return;
+    onSocialsChange([...socials, { id: `custom-${Date.now()}`, label, url, icon: 'AtSign', visible: true }]);
+    setNewSocial({ label: '', url: '' });
+  };
+
   const labels = new Map(PUBLIC_SECTIONS.map(({ id, label }) => [id, label]));
 
   return (
     <div className="max-w-2xl">
       <div className="mb-6">
         <h2 className="font-display text-2xl font-bold">Section Management / Order</h2>
-        <p className="text-sm text-white/40">Changes are saved in this browser and applied to the public page.</p>
+        <p className="text-sm text-white/40">Changes sync to the portfolio cloud record and public page.</p>
       </div>
       <ol className="space-y-2">
         {order.map((id, index) => (
@@ -203,7 +217,7 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
         </div>
         <div className="space-y-2">
           {socials.map((social) => (
-            <div key={social.id} className="grid grid-cols-[minmax(7rem,0.65fr)_minmax(0,2fr)] items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 sm:grid-cols-[minmax(8rem,0.75fr)_minmax(0,2fr)]">
+            <div key={social.id} className="grid grid-cols-[minmax(7rem,0.65fr)_minmax(0,2fr)_auto] items-center gap-3 rounded-xl border border-white/40 bg-white/60 p-3 sm:grid-cols-[minmax(8rem,0.75fr)_minmax(0,2fr)_auto]">
               <label className="flex min-w-0 items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"
@@ -224,8 +238,22 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
                 aria-label={`${social.label} URL`}
                 className="premium-input min-w-0 rounded-lg px-3 py-2 text-xs"
               />
+              <button
+                type="button"
+                onClick={() => onSocialsChange(socials.filter((item) => item.id !== social.id))}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50"
+                aria-label={`Delete ${social.label} link`}
+                title="Delete link"
+              >
+                ×
+              </button>
             </div>
           ))}
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.5fr_auto]">
+          <input value={newSocial.label} onChange={(event) => setNewSocial({ ...newSocial, label: event.target.value })} className={inputCls} placeholder="Platform name" aria-label="New platform name" />
+          <input type="url" value={newSocial.url} onChange={(event) => setNewSocial({ ...newSocial, url: event.target.value })} className={inputCls} placeholder="https://..." aria-label="New social URL" />
+          <button type="button" onClick={addSocial} className="btn-premium flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold"><AtSign size={15} /> Add</button>
         </div>
       </div>
     </div>
@@ -269,10 +297,6 @@ function AdminLogin({ password, setPassword, onLogin, onClose }: {
             </button>
           </form>
 
-          <div className="mt-6 p-3 rounded-xl bg-white/5 border border-white/10 text-center">
-            <p className="text-xs text-white/30">Demo password: <span className="text-cyan-300/60 font-mono">admin123</span></p>
-          </div>
-
           <button
             onClick={onClose}
             className="w-full mt-4 text-center text-xs text-white/40 hover:text-white/70 transition-colors"
@@ -304,14 +328,25 @@ function AdminHeader({ title, count, onAdd }: { title: string; count: number; on
   );
 }
 
-function ItemCard({ children, onEdit, onDelete }: {
-  children: React.ReactNode; onEdit: () => void; onDelete: () => void;
+function ItemCard({ children, onEdit, onDelete, visible, onToggleVisibility }: {
+  children: React.ReactNode; onEdit: () => void; onDelete: () => void; visible?: boolean; onToggleVisibility?: () => void;
 }) {
   return (
-    <div className="glass-card rounded-2xl p-4 group">
+    <div className={`glass-card rounded-2xl p-4 group ${visible === false ? 'opacity-60' : ''}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">{children}</div>
         <div className="flex items-center gap-1.5 opacity-60 group-hover:opacity-100 transition-opacity">
+          {onToggleVisibility && (
+            <button
+              type="button"
+              onClick={onToggleVisibility}
+              aria-label={visible === false ? 'Show item publicly' : 'Hide item from public site'}
+              title={visible === false ? 'Show publicly' : 'Hide from public site'}
+              className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/60 hover:text-cyan-300"
+            >
+              {visible === false ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
+          )}
           <button
             onClick={() => { sounds.click(); onEdit(); }}
             onMouseEnter={() => sounds.hover()}
@@ -347,7 +382,7 @@ function ModalEditor({ title, onClose, children }: { title: string; onClose: () 
   return (
     <div className="fixed inset-0 z-[9600] flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
-      <div className="relative w-full max-w-lg max-h-[85vh] overflow-y-auto glass-strong rounded-3xl p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+        <div className="ios-scroll relative w-full max-w-lg max-h-[85dvh] overflow-y-auto glass-strong rounded-3xl p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="font-display text-xl font-bold">{title}</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-lg glass flex items-center justify-center text-white/60 hover:text-rose-300">✕</button>
@@ -366,7 +401,7 @@ function PoemsAdmin() {
   const [showForm, setShowForm] = useState(false);
   const [formInitial, setFormInitial] = useState<Omit<Poem, 'id'>>({
     type: 'poem', title: '', author: data.profile.name, excerpt: '', content: '',
-    category: '', date: new Date().toISOString().slice(0, 10), coverGradient: 'from-cyan-500 to-blue-600',
+    category: '', date: new Date().toISOString().slice(0, 10), coverGradient: 'from-cyan-500 to-blue-600', visible: true,
   });
 
   const openAdd = () => {
@@ -381,10 +416,10 @@ function PoemsAdmin() {
       <AdminHeader title="Literature" count={data.poems.length} onAdd={openAdd} />
       <div className="space-y-3">
         {data.poems.map((p) => (
-          <ItemCard key={p.id} onEdit={() => { setEditing(p); setShowForm(true); }} onDelete={() => { deletePoem(p.id); notify('Deleted', 'info'); }}>
+          <ItemCard key={p.id} visible={p.visible} onToggleVisibility={() => updatePoem(p.id, { visible: p.visible === false })} onEdit={() => { setEditing(p); setShowForm(true); }} onDelete={() => { deletePoem(p.id); notify('Deleted', 'info'); }}>
             <div className="flex items-center gap-3">
               <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${p.coverGradient} flex items-center justify-center text-white text-sm shrink-0`}>
-                {p.type === 'poem' ? '✦' : '❖'}
+                {p.type === 'poem' ? '✦' : p.type === 'article' ? '▤' : '❖'}
               </div>
               <div className="min-w-0">
                 <p className="font-semibold text-sm truncate">{p.title}</p>
@@ -437,6 +472,7 @@ function PoemForm({ poem, initial, onClose, onSave, onDraft }: {
             <select value={form.type} onChange={(e) => update('type', e.target.value)} className={inputCls}>
               <option value="poem">Poem</option>
               <option value="novel">Novel</option>
+              <option value="article">Article</option>
             </select>
           </FormField>
           <FormField label="Category">
@@ -509,7 +545,7 @@ function MediaAdmin() {
   const [showForm, setShowForm] = useState(false);
 
   const blank: Omit<MediaItem, 'id'> = {
-    type: 'photo', title: '', url: '', thumbnail: '', category: '', date: new Date().toISOString().slice(0, 10),
+    type: 'photo', title: '', url: '', thumbnail: '', category: '', date: new Date().toISOString().slice(0, 10), visible: true,
   };
 
   return (
@@ -517,7 +553,7 @@ function MediaAdmin() {
       <AdminHeader title="Media" count={data.media.length} onAdd={() => { setEditing(null); setShowForm(true); }} />
       <div className="space-y-3">
         {data.media.map((m) => (
-          <ItemCard key={m.id} onEdit={() => { setEditing(m); setShowForm(true); }} onDelete={() => { deleteMedia(m.id); notify('Deleted', 'info'); }}>
+          <ItemCard key={m.id} visible={m.visible} onToggleVisibility={() => updateMedia(m.id, { visible: m.visible === false })} onEdit={() => { setEditing(m); setShowForm(true); }} onDelete={() => { deleteMedia(m.id); notify('Deleted', 'info'); }}>
             <div className="flex items-center gap-3">
               {m.thumbnail ? (
                 <img src={m.thumbnail} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
@@ -583,12 +619,12 @@ function MediaForm({ item, onClose, onSave, blank }: {
         <FormField label="Title">
           <input value={form.title} onChange={(e) => update('title', e.target.value)} className={inputCls} />
         </FormField>
-        <FormField label={form.type === 'video' ? 'YouTube Embed URL' : form.type === 'music' ? 'Audio File URL' : 'Image URL'}>
+        <FormField label={form.type === 'video' ? 'Video URL' : form.type === 'music' ? 'Audio File URL' : 'Image URL'}>
           <input
             value={form.url}
             onChange={(e) => handleUrlChange(e.target.value)}
             className={inputCls}
-            placeholder={form.type === 'video' ? 'https://www.youtube.com/embed/...' : form.type === 'music' ? 'https://.../track.mp3' : 'https://...'}
+            placeholder={form.type === 'video' ? 'YouTube, MP4, or other video URL' : form.type === 'music' ? 'https://.../track.mp3' : 'https://...'}
           />
         </FormField>
         <FormField label={form.type === 'music' ? 'Cover Image URL (optional)' : 'Thumbnail URL'}>
@@ -633,7 +669,7 @@ function StudyAdmin() {
   const [showForm, setShowForm] = useState(false);
 
   const blank: Omit<StudyMaterial, 'id'> = {
-    title: '', description: '', fileType: 'PDF', fileSize: '', url: '#', tags: [], date: new Date().toISOString().slice(0, 10),
+    title: '', description: '', fileType: 'PDF', fileSize: '', url: '#', tags: [], date: new Date().toISOString().slice(0, 10), visible: true,
   };
 
   return (
@@ -641,10 +677,11 @@ function StudyAdmin() {
       <AdminHeader title="Study Material" count={data.studyMaterials.length} onAdd={() => { setEditing(null); setShowForm(true); }} />
       <div className="space-y-3">
         {data.studyMaterials.map((sm) => (
-          <ItemCard key={sm.id} onEdit={() => { setEditing(sm); setShowForm(true); }} onDelete={() => { deleteStudyMaterial(sm.id); notify('Deleted', 'info'); }}>
+          <ItemCard key={sm.id} visible={sm.visible} onToggleVisibility={() => updateStudyMaterial(sm.id, { visible: sm.visible === false })} onEdit={() => { setEditing(sm); setShowForm(true); }} onDelete={() => { deleteStudyMaterial(sm.id); notify('Deleted', 'info'); }}>
             <div>
               <p className="font-semibold text-sm">{sm.title}</p>
               <p className="text-xs text-white/40">{sm.fileType} · {sm.fileSize} · {sm.tags.join(', ')}</p>
+              {sm.url && sm.url !== '#' && <a href={sm.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-xs font-semibold text-cyan-700 underline">Download file</a>}
             </div>
           </ItemCard>
         ))}
@@ -755,7 +792,7 @@ function AchievementsAdmin() {
   const [showForm, setShowForm] = useState(false);
 
   const blank: Omit<Achievement, 'id'> = {
-    title: '', description: '', date: new Date().toISOString().slice(0, 10), category: 'Writing', icon: 'Award',
+    title: '', description: '', date: new Date().toISOString().slice(0, 10), category: 'Writing', icon: 'Award', visible: true,
   };
 
   return (
@@ -763,7 +800,7 @@ function AchievementsAdmin() {
       <AdminHeader title="Achievements" count={data.achievements.length} onAdd={() => { setEditing(null); setShowForm(true); }} />
       <div className="space-y-3">
         {data.achievements.map((a) => (
-          <ItemCard key={a.id} onEdit={() => { setEditing(a); setShowForm(true); }} onDelete={() => { deleteAchievement(a.id); notify('Deleted', 'info'); }}>
+          <ItemCard key={a.id} visible={a.visible} onToggleVisibility={() => updateAchievement(a.id, { visible: a.visible === false })} onEdit={() => { setEditing(a); setShowForm(true); }} onDelete={() => { deleteAchievement(a.id); notify('Deleted', 'info'); }}>
             <div>
               <p className="font-semibold text-sm">{a.title}</p>
               <p className="text-xs text-white/40">{a.category} · {formatDate(a.date)}</p>
@@ -794,7 +831,7 @@ function AchievementForm({ item, onClose, onSave, blank }: {
   const [form, setForm] = useState<Omit<Achievement, 'id'>>(item ? { ...item } : blank);
   const { notify } = useToast();
 
-  const icons = ['Award', 'BookOpen', 'Mic', 'Trophy', 'Camera'];
+  const icons = ['Award', 'BookOpen', 'Mic', 'Trophy', 'Camera', 'Certificate'];
   const categories = ['Writing', 'Publishing', 'Speaking', 'Technology', 'Photography'];
 
   const update = (key: keyof Omit<Achievement, 'id'>, value: string) => setForm((f) => ({ ...f, [key]: value }));
@@ -813,9 +850,11 @@ function AchievementForm({ item, onClose, onSave, blank }: {
             <input type="date" value={form.date} onChange={(e) => update('date', e.target.value)} className={inputCls} />
           </FormField>
           <FormField label="Category">
-            <select value={form.category} onChange={(e) => update('category', e.target.value)} className={inputCls}>
+            <select value={categories.includes(form.category) ? form.category : 'Custom'} onChange={(e) => update('category', e.target.value === 'Custom' ? '' : e.target.value)} className={inputCls}>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+              <option value="Custom">Custom category</option>
             </select>
+            {!categories.includes(form.category) && <input value={form.category} onChange={(e) => update('category', e.target.value)} className={`${inputCls} mt-2`} placeholder="Type a category" />}
           </FormField>
         </div>
         <FormField label="Icon">
@@ -842,7 +881,7 @@ function AchievementForm({ item, onClose, onSave, blank }: {
 
 // === Guestbook Admin ===
 function GuestbookAdmin() {
-  const { data, deleteGuestbookEntry } = useData();
+  const { data, updateGuestbookEntry, deleteGuestbookEntry } = useData();
   const { notify } = useToast();
 
   return (
@@ -850,9 +889,10 @@ function GuestbookAdmin() {
       <AdminHeader title="Guestbook" count={data.guestbook.length} onAdd={() => notify('Guestbook entries are added by visitors on the site', 'info')} />
       <div className="space-y-3">
         {data.guestbook.map((g) => (
-          <ItemCard key={g.id} onEdit={() => notify('Guestbook entries are view-only', 'info')} onDelete={() => { deleteGuestbookEntry(g.id); notify('Deleted', 'info'); }}>
+          <ItemCard key={g.id} visible={g.approved !== false} onToggleVisibility={() => { updateGuestbookEntry(g.id, { approved: g.approved === false }); notify(g.approved === false ? 'Guestbook entry approved' : 'Guestbook entry unapproved', 'info'); }} onEdit={() => notify('Guestbook entries are view-only', 'info')} onDelete={() => { deleteGuestbookEntry(g.id); notify('Deleted', 'info'); }}>
             <div>
               <p className="font-semibold text-sm">{g.name}</p>
+              <p className="text-xs font-medium text-cyan-700">{g.approved === false ? 'Pending approval' : 'Approved'}</p>
               <p className="text-xs text-white/50 mt-1">{g.message}</p>
               <p className="text-xs text-white/30 mt-1">{formatDate(g.date)}</p>
             </div>
@@ -870,33 +910,24 @@ function ProfileAdmin() {
   const { notify } = useToast();
   const [form, setForm] = useState<Profile>(data.profile);
   const [skillInput, setSkillInput] = useState('');
-  const [socialInput, setSocialInput] = useState({ label: '', url: '', icon: 'Github' });
 
   const update = <K extends keyof Profile>(key: K, value: Profile[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const saveProfile = () => updateProfile({ ...form, socials: data.profile.socials });
 
   const addSkill = () => {
     const s = skillInput.trim();
     if (s && !form.skills.includes(s)) { update('skills', [...form.skills, s]); setSkillInput(''); }
   };
 
-  const addSocial = () => {
-    if (socialInput.label.trim() && socialInput.url.trim()) {
-      update('socials', [...form.socials, { id: Date.now().toString(), ...socialInput, visible: true }]);
-      setSocialInput({ label: '', url: '', icon: 'Github' });
-    }
-  };
-
-  const removeSocial = (id: string) => update('socials', form.socials.filter((s) => s.id !== id));
-
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="font-display text-2xl font-bold">Profile Settings</h2>
-          <p className="text-sm text-white/40">Update your bio, skills, and social links</p>
+          <p className="text-sm text-white/40">Update your bio, skills, and profile details</p>
         </div>
         <button
-          onClick={() => { sounds.success(); updateProfile(form); notify('Profile saved successfully'); }}
+          onClick={() => { sounds.success(); saveProfile(); notify('Profile saved successfully'); }}
           onMouseEnter={() => sounds.hover()}
           className="btn-premium px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
         >
@@ -980,54 +1011,8 @@ function ProfileAdmin() {
           </div>
         </div>
 
-        {/* Socials */}
-        <div className="glass-card rounded-2xl p-5">
-          <h3 className="font-semibold text-sm mb-3">Social Links</h3>
-          <div className="space-y-2 mb-4">
-            {form.socials.map((s) => (
-              <div key={s.id} className="grid grid-cols-[auto_minmax(4rem,0.8fr)_minmax(0,2fr)_auto] items-center gap-2 glass rounded-xl px-3 py-2">
-                <input
-                  type="checkbox"
-                  checked={s.visible !== false}
-                  onChange={(e) => update('socials', form.socials.map((social) => (
-                    social.id === s.id ? { ...social, visible: e.target.checked } : social
-                  )))}
-                  aria-label={`Show ${s.label} on portfolio`}
-                  className="h-4 w-4 accent-cyan-700"
-                />
-                <span className="text-sm truncate">{s.label}</span>
-                <input
-                  type="url"
-                  value={s.url}
-                  onChange={(e) => update('socials', form.socials.map((social) => (
-                    social.id === s.id ? { ...social, url: e.target.value } : social
-                  )))}
-                  aria-label={`${s.label} URL`}
-                  className="premium-input min-w-0 rounded-lg px-2 py-1.5 text-xs"
-                />
-                <button onClick={() => removeSocial(s.id)} className="text-rose-400/60 hover:text-rose-400 text-xs">✕</button>
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            <input
-              value={socialInput.label}
-              onChange={(e) => setSocialInput({ ...socialInput, label: e.target.value })}
-              className={inputCls}
-              placeholder="Label"
-            />
-            <input
-              value={socialInput.url}
-              onChange={(e) => setSocialInput({ ...socialInput, url: e.target.value })}
-              className={inputCls}
-              placeholder="URL"
-            />
-            <button onClick={addSocial} className="px-4 rounded-xl glass text-sm text-white/60">Add</button>
-          </div>
-        </div>
-
         <button
-          onClick={() => { sounds.success(); updateProfile(form); notify('Profile saved successfully'); }}
+          onClick={() => { sounds.success(); saveProfile(); notify('Profile saved successfully'); }}
           className="btn-premium w-full py-3.5 rounded-xl text-sm font-semibold text-white"
         >
           Save All Changes
@@ -1119,14 +1104,14 @@ function CertificatesAdmin() {
               required
             />
           </FormField>
-          <FormField label="Image URL (Cloudinary URLs supported)">
+          <FormField label="Image URL">
             <input
               type="url"
               value={form.imageUrl.startsWith('data:') ? '' : form.imageUrl}
               onChange={(event) => setForm({ ...form, imageUrl: event.target.value })}
               className={inputCls}
               aria-label="Image URL (Cloudinary URLs supported)"
-              placeholder="https://res.cloudinary.com/..."
+              placeholder="https://..."
             />
           </FormField>
           <FormField label="Or upload an image (up to 512 KB)">
@@ -1163,6 +1148,8 @@ function CertificatesAdmin() {
           {data.certificates.map((certificate) => (
             <ItemCard
               key={certificate.id}
+              visible={certificate.visible}
+              onToggleVisibility={() => updateCertificate(certificate.id, { visible: certificate.visible === false })}
               onEdit={() => { setEditing(certificate); setForm({ title: certificate.title, imageUrl: certificate.imageUrl, issuedDate: certificate.issuedDate }); setShowForm(true); }}
               onDelete={() => { deleteCertificate(certificate.id); notify('Certificate deleted', 'info'); }}
             >
@@ -1183,7 +1170,7 @@ function CertificatesAdmin() {
 
 // === Settings Admin ===
 function SettingsAdmin() {
-  const { data, setAdminPassword } = useData();
+  const { data, sectionOrder, setAdminPassword, resetData } = useData();
   const { notify } = useToast();
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
@@ -1205,11 +1192,16 @@ function SettingsAdmin() {
             <input type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className={inputCls} />
           </FormField>
           <button
-            onClick={() => {
-              if (!newPw.trim()) { notify('Enter a new password', 'error'); return; }
+            onClick={async () => {
+              if (newPw.trim().length < 8) { notify('Password must be at least 8 characters', 'error'); return; }
               if (newPw !== confirmPw) { notify('Passwords do not match', 'error'); return; }
-              sounds.success(); setAdminPassword(newPw); setNewPw(''); setConfirmPw('');
-              notify('Password updated successfully');
+              try {
+                await setAdminPassword(newPw);
+                sounds.success(); setNewPw(''); setConfirmPw('');
+                notify('Password updated successfully');
+              } catch {
+                notify('Could not update the cloud admin password', 'error');
+              }
             }}
             className="btn-premium w-full py-3 rounded-xl text-sm font-semibold text-white"
           >
@@ -1219,12 +1211,12 @@ function SettingsAdmin() {
 
         <div className="glass-card rounded-2xl p-5 space-y-3">
           <h3 className="font-semibold text-sm">Data Management</h3>
-          <p className="text-xs text-white/40">All data is stored in your browser's localStorage. Export a backup or reset to defaults.</p>
+          <p className="text-xs text-white/40">Cloud data is cached in this browser. Export a backup or reset the portfolio to defaults.</p>
           <div className="flex gap-3">
             <button
               onClick={() => {
                 sounds.click();
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const blob = new Blob([JSON.stringify({ ...data, sectionOrder }, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url; a.download = 'portfolio-backup.json'; a.click();
@@ -1238,9 +1230,8 @@ function SettingsAdmin() {
             <button
               onClick={() => {
                 if (confirm('Reset all data to defaults? This cannot be undone.')) {
-                  localStorage.removeItem('portfolio_data_v1');
-                  sounds.success(); notify('Data reset — reloading...');
-                  setTimeout(() => window.location.reload(), 1000);
+                  resetData();
+                  sounds.success(); notify('Portfolio reset; syncing to cloud...');
                 }
               }}
               className="flex-1 py-2.5 rounded-xl bg-rose-500/15 border border-rose-400/30 text-sm text-rose-300 hover:bg-rose-500/25"
@@ -1253,8 +1244,7 @@ function SettingsAdmin() {
         <div className="glass-card rounded-2xl p-5">
           <h3 className="font-semibold text-sm mb-2">Keyboard Shortcuts</h3>
           <div className="space-y-1.5 text-xs text-white/50">
-            <div className="flex justify-between"><span>Command Palette</span><kbd className="px-2 py-0.5 rounded bg-white/5 border border-white/10">Ctrl + K</kbd></div>
-            <div className="flex justify-between"><span>Zen Mode (in reader)</span><kbd className="px-2 py-0.5 rounded bg-white/5 border border-white/10">Z</kbd></div>
+            <div className="flex justify-between"><span>Close dialogs</span><kbd className="px-2 py-0.5 rounded bg-white/5 border border-white/10">ESC</kbd></div>
             <div className="flex justify-between"><span>Close modals</span><kbd className="px-2 py-0.5 rounded bg-white/5 border border-white/10">ESC</kbd></div>
           </div>
         </div>

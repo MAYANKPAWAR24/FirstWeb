@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { sounds } from '@/lib/sound';
 import { useToast } from '@/lib/ToastContext';
 import { formatDate } from '@/lib/utils';
@@ -5,6 +6,7 @@ import type { StudyMaterial } from '@/lib/types';
 
 interface StudyProps {
   materials: StudyMaterial[];
+  searchTarget?: string | null;
 }
 
 const FILE_ICONS: Record<string, string> = {
@@ -25,8 +27,18 @@ const FILE_COLORS: Record<string, string> = {
   IMG: 'from-pink-500/20 to-rose-600/10 border-pink-400/20 text-pink-300',
 };
 
-export default function StudyMaterialSection({ materials }: StudyProps) {
+export default function StudyMaterialSection({ materials, searchTarget }: StudyProps) {
   const { notify } = useToast();
+
+  useEffect(() => {
+    if (!searchTarget) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`search-target-study-${searchTarget}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [searchTarget]);
+
+  const visibleMaterials = materials.filter((material) => material.visible !== false);
 
   const handleDownload = (sm: StudyMaterial) => {
     sounds.click();
@@ -49,13 +61,14 @@ export default function StudyMaterialSection({ materials }: StudyProps) {
         </div>
 
         {/* Grid */}
-        {materials.length === 0 ? (
+        {visibleMaterials.length === 0 ? (
           <div className="text-center py-20 text-white/40 text-sm">No study materials available yet.</div>
         ) : (
           <div className="grid sm:grid-cols-2 gap-5">
-            {materials.map((sm, i) => (
+            {visibleMaterials.map((sm, i) => (
               <div
                 key={sm.id}
+                id={`search-target-study-${sm.id}`}
                 className="reveal"
                 style={{ transitionDelay: `${i * 60}ms` }}
               >

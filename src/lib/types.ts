@@ -24,11 +24,12 @@ export interface Certificate {
   title: string;
   imageUrl: string;
   issuedDate: string;
+  visible?: boolean;
 }
 
 export interface Poem {
   id: string;
-  type: 'poem' | 'novel';
+  type: 'poem' | 'novel' | 'article';
   title: string;
   author: string;
   excerpt: string;
@@ -36,6 +37,7 @@ export interface Poem {
   category: string;
   date: string;
   coverGradient: string;
+  visible?: boolean;
 }
 
 export interface MediaItem {
@@ -46,6 +48,7 @@ export interface MediaItem {
   thumbnail: string;
   category: string;
   date: string;
+  visible?: boolean;
 }
 
 export interface StudyMaterial {
@@ -57,6 +60,7 @@ export interface StudyMaterial {
   url: string;
   tags: string[];
   date: string;
+  visible?: boolean;
 }
 
 export interface Achievement {
@@ -66,6 +70,7 @@ export interface Achievement {
   date: string;
   category: string;
   icon: string;
+  visible?: boolean;
 }
 
 export interface GuestbookEntry {
@@ -74,6 +79,7 @@ export interface GuestbookEntry {
   message: string;
   date: string;
   avatar: string;
+  approved?: boolean;
 }
 
 export interface PortfolioData {
@@ -84,7 +90,6 @@ export interface PortfolioData {
   achievements: Achievement[];
   certificates: Certificate[];
   guestbook: GuestbookEntry[];
-  adminPassword: string;
   visitorCount: number;
 }
 
