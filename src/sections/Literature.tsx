@@ -198,16 +198,27 @@ function ReadingModal({ poem, onClose }: { poem: Poem; onClose: () => void }) {
     };
   }, [onClose]);
 
+  // Start every reopened work at the top instead of inheriting a stale scroll.
+  useEffect(() => {
+    setProgress(0);
+  }, [poem.id]);
+
   const handleScroll = (e: React.UIEvent) => {
     const el = e.currentTarget;
     const max = el.scrollHeight - el.clientHeight;
-    setProgress(max > 0 ? (el.scrollTop / max) * 100 : 0);
+    setProgress(max > 0 ? Math.min(100, (el.scrollTop / max) * 100) : 0);
   };
 
   const handleCopy = async () => {
     sounds.click();
-    await copyToClipboard(`${poem.title}\n\n${poem.content}`);
-    notify('Copied to clipboard');
+    try {
+      await copyToClipboard(`${poem.title}\n\n${poem.content}`);
+      sounds.success();
+      notify('Text copied to clipboard');
+    } catch {
+      sounds.error();
+      notify('Could not copy — select the text manually', 'error');
+    }
   };
 
   const handleShare = async () => {
@@ -218,59 +229,82 @@ function ReadingModal({ poem, onClose }: { poem: Poem; onClose: () => void }) {
       url: window.location.href,
     };
     if (navigator.share) {
-      try { await navigator.share(shareData); } catch { /* cancelled */ }
-    } else {
+      try {
+        await navigator.share(shareData);
+      } catch {
+        /* User dismissed the share sheet. */
+      }
+      return;
+    }
+    try {
       await copyToClipboard(`${poem.title} — ${window.location.href}`);
       notify('Share link copied');
+    } catch {
+      notify('Could not copy the share link', 'error');
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 animate-fade-in gpu-accelerated" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-md gpu-layer" />
+    <div
+      className="fixed inset-0 z-[9000] flex items-end sm:items-start sm:justify-center justify-center sm:px-4 sm:pt-24 sm:pb-6 animate-fade-in gpu-accelerated"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-md gpu-layer" />
 
       {/* Reading progress within modal */}
-      <div className="absolute top-0 left-0 right-0 h-0.5 bg-white/5 z-10">
+      <div className="absolute top-0 left-0 right-0 h-0.5 bg-white/10 z-10">
         <div
           className="h-full bg-gradient-to-r from-cyan-400 to-violet-500 transition-all"
           style={{ width: `${progress}%` }}
         />
       </div>
 
+      {/* `items-end` on phones gives a full-width sheet that never starts with a
+          dead gap; from `sm` up it becomes a centered card pushed below the
+          sticky header (`sm:pt-24`). */}
       <div
-        className="relative w-full max-w-2xl max-h-[88vh] glass-strong rounded-3xl overflow-hidden animate-scale-in flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label={poem.title}
+        className="relative w-full sm:max-w-2xl max-h-[100dvh] sm:max-h-[80dvh] glass-strong rounded-t-3xl sm:rounded-3xl overflow-hidden animate-scale-in flex flex-col gpu-layer"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className={`px-2.5 py-1 rounded-full text-xs font-medium bg-gradient-to-br ${poem.coverGradient} text-white`}>
+        {/* Header — always visible, the body is the only scrolling part. */}
+        <div className="shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-black/5 flex items-center gap-3 justify-between">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <span className={`on-gradient-text shrink-0 px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-medium bg-gradient-to-br ${poem.coverGradient}`}>
               {poem.type === 'poem' ? 'Poem' : poem.type === 'article' ? 'Article' : 'Novel'}
             </span>
-            <span className="text-xs text-white/40">{poem.category}</span>
+            <span className="truncate text-xs text-white/50">{poem.category}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button
+              type="button"
               onClick={handleCopy}
               onMouseEnter={() => sounds.hover()}
-              className="w-9 h-9 rounded-xl glass flex items-center justify-center text-white/60 hover:text-cyan-300 transition-colors text-sm"
-              title="Copy"
+              className="flex h-9 w-9 items-center justify-center rounded-xl glass text-white/70 hover:text-cyan-600 transition-colors text-sm"
+              title="Copy text"
+              aria-label="Copy text to clipboard"
             >
               ⧉
             </button>
             <button
+              type="button"
               onClick={handleShare}
               onMouseEnter={() => sounds.hover()}
-              className="w-9 h-9 rounded-xl glass flex items-center justify-center text-white/60 hover:text-cyan-300 transition-colors text-sm"
+              className="flex h-9 w-9 items-center justify-center rounded-xl glass text-white/70 hover:text-cyan-600 transition-colors text-sm"
               title="Share"
+              aria-label="Share this work"
             >
               ↗
             </button>
             <button
+              type="button"
               onClick={onClose}
               onMouseEnter={() => sounds.hover()}
-              className="w-9 h-9 rounded-xl glass flex items-center justify-center text-white/60 hover:text-rose-300 transition-colors"
+              className="flex h-9 w-9 items-center justify-center rounded-xl glass text-white/70 hover:text-rose-500 transition-colors"
               title="Close (ESC)"
+              aria-label="Close reader"
             >
               ✕
             </button>
@@ -278,24 +312,25 @@ function ReadingModal({ poem, onClose }: { poem: Poem; onClose: () => void }) {
         </div>
 
         {/* Cover banner */}
-        <div className={`h-28 bg-gradient-to-br ${poem.coverGradient} relative`}>
-            <div className="absolute inset-0 bg-black/20" />
-            <div className="absolute bottom-4 left-6">
-              <h3 className="literature-copy text-2xl font-bold text-white">{poem.title}</h3>
-              <p className="text-sm text-white/70">by {poem.author} · {formatDate(poem.date)}</p>
-            </div>
-        </div>
-
-        {/* Content */}
-        <div
-          onScroll={handleScroll}
-          className="ios-scroll flex-1 overflow-y-auto px-5 py-6 text-left sm:px-8 sm:py-8"
-        >
-          <div className="literature-copy text-[15px] sm:text-base text-white/75 whitespace-pre-wrap">
-            {poem.content}
+        <div className={`on-gradient-text shrink-0 h-20 sm:h-28 bg-gradient-to-br ${poem.coverGradient} relative`}>
+          <div className="absolute inset-0 bg-black/20" />
+          <div className="absolute bottom-3 left-4 right-4 sm:bottom-4 sm:left-6">
+            <h3 className="literature-copy text-xl sm:text-2xl font-bold text-white truncate">{poem.title}</h3>
+            <p className="text-xs sm:text-sm text-white/80 truncate">by {poem.author} · {formatDate(poem.date)}</p>
           </div>
         </div>
 
+        {/* Content — the single scroll container. `min-h-0` lets it shrink
+            inside the flex column on short screens; `max-height: 75vh` (from
+            `.reader-scroll`) caps it on tall ones. */}
+        <div
+          onScroll={handleScroll}
+          className="reader-scroll min-h-0 flex-1 px-5 py-6 sm:px-8 sm:py-8 text-left"
+        >
+          <div className="literature-copy text-[15px] sm:text-base text-white/75 whitespace-pre-wrap break-words">
+            {poem.content}
+          </div>
+        </div>
       </div>
     </div>
   );

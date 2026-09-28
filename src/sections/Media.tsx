@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from 'react';
-import { Music2 } from 'lucide-react';
+import { ExternalLink, Music2, Play } from 'lucide-react';
 import { sounds } from '@/lib/sound';
 import { lockPageScroll } from '@/lib/utils';
 import { useResponsiveItemLimit } from '@/hooks/useResponsiveItemLimit';
+import { isDirectVideoUrl, isEmbeddableVideoUrl } from '@/lib/media';
+import { VideoPlayer } from '@/components/VideoEmbed';
 import type { MediaItem } from '@/lib/types';
 
 interface MediaProps {
@@ -11,24 +13,6 @@ interface MediaProps {
 }
 
 type MediaFilter = 'all' | 'photo' | 'video' | 'music';
-
-function getVideoEmbedUrl(rawUrl: string) {
-  try {
-    const url = new URL(rawUrl);
-    const videoId = url.hostname === 'youtu.be'
-      ? url.pathname.slice(1)
-      : url.hostname.includes('youtube.com')
-        ? url.searchParams.get('v') ?? url.pathname.match(/\/embed\/([^/]+)/)?.[1]
-        : null;
-    return videoId ? `https://www.youtube.com/embed/${videoId}` : rawUrl;
-  } catch {
-    return rawUrl;
-  }
-}
-
-function isDirectVideoUrl(url: string) {
-  return /\.(mp4|webm|ogg)(?:[?#]|$)/i.test(url);
-}
 
 export default function Media({ items, searchTarget }: MediaProps) {
   const [filter, setFilter] = useState<MediaFilter>('all');
@@ -137,7 +121,11 @@ export default function Media({ items, searchTarget }: MediaProps) {
                     {item.type === 'video' && (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div className="w-14 h-14 rounded-full glass-strong flex items-center justify-center group-hover:scale-110 transition-transform pulse-glow">
-                          <span className="text-white text-lg ml-1">▶</span>
+                          {isEmbeddableVideoUrl(item.url) || isDirectVideoUrl(item.url) ? (
+                            <Play size={20} className="translate-x-px" fill="currentColor" aria-hidden="true" />
+                          ) : (
+                            <ExternalLink size={20} aria-hidden="true" />
+                          )}
                         </div>
                       </div>
                     )}
@@ -196,43 +184,38 @@ function MediaLightbox({ item, onClose }: { item: MediaItem; onClose: () => void
 
   return (
     <div
-      className="fixed inset-0 z-[9000] flex items-center justify-center p-4 animate-fade-in gpu-accelerated"
+      className="fixed inset-0 z-[9000] flex items-end sm:items-start sm:justify-center justify-center sm:px-4 sm:pt-24 sm:pb-6 animate-fade-in gpu-accelerated"
       onClick={onClose}
     >
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-md gpu-layer" />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-md gpu-layer" />
       <div
-        className="ios-scroll relative max-h-[90dvh] w-full max-w-4xl overflow-y-auto animate-scale-in gpu-layer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={item.title}
+        className="ios-scroll relative w-full max-h-[100dvh] sm:max-h-[82dvh] overflow-y-auto animate-scale-in gpu-layer"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="glass-strong rounded-3xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-            <div>
-              <h3 className="font-display font-bold text-white">{item.title}</h3>
-              <p className="text-xs text-white/40">{item.category}</p>
+        <div className="glass-strong overflow-hidden rounded-t-3xl sm:rounded-3xl">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200/70 flex items-center justify-between gap-3 sticky top-0 z-10">
+            <div className="min-w-0">
+              <h3 className="font-display font-bold text-slate-900 truncate">{item.title}</h3>
+              <p className="text-xs text-slate-500 capitalize">{item.type} · {item.category}</p>
             </div>
             <button
               onClick={onClose}
               onMouseEnter={() => sounds.hover()}
-              className="w-9 h-9 rounded-xl glass flex items-center justify-center text-white/60 hover:text-rose-300 transition-colors"
+              className="shrink-0 w-9 h-9 rounded-xl glass flex items-center justify-center text-slate-500 hover:text-rose-500 transition-colors"
+              title="Close (ESC)"
+              aria-label="Close viewer"
             >
               ✕
             </button>
           </div>
-          <div className="p-4">
+          <div className="p-3 sm:p-4">
             {item.type === 'photo' ? (
               <img src={item.url} alt={item.title} className="w-full rounded-2xl" />
-            ) : item.type === 'video' && isDirectVideoUrl(item.url) ? (
-              <video controls autoPlay playsInline src={item.url} className="max-h-[75dvh] w-full rounded-2xl" />
             ) : item.type === 'video' ? (
-              <div className="aspect-video rounded-2xl overflow-hidden">
-                <iframe
-                  src={getVideoEmbedUrl(item.url)}
-                  title={item.title}
-                  className="w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
+              <VideoPlayer url={item.url} title={item.title} />
             ) : (
               <audio controls autoPlay src={item.url} className="w-full">
                 Your browser does not support audio playback.

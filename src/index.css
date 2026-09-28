@@ -667,6 +667,95 @@ html.custom-cursor-active textarea {
   overscroll-behavior: contain;
 }
 
+/* === Immersive reader ===
+   The single scroll container of the literature modal. `max-height` is an
+   upper bound, not a fixed size: the flex parent can still shrink it on short
+   screens, while tall screens get the full 75vh reading measure. */
+.reader-scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  max-height: 75vh;
+  /* Momentum scrolling must not chain to the (locked) page behind the modal. */
+  touch-action: pan-y;
+}
+
+/* Text sitting on a saturated gradient: the light-theme `.premium-bg` remaps
+   `text-white` utilities, so anything on a cover/banner needs this. */
+.on-gradient-text,
+.on-gradient-text * {
+  color: #ffffff !important;
+}
+
+/* External link card used when a media URL cannot be embedded. */
+.external-card {
+  background: linear-gradient(135deg, rgba(0, 113, 227, 0.06), rgba(20, 124, 138, 0.05));
+  border: 1px solid var(--line);
+  transition: border-color 0.28s ease, box-shadow 0.28s ease, transform 0.28s ease;
+}
+.external-card:hover {
+  border-color: rgba(0, 113, 227, 0.28);
+  box-shadow: 0 8px 24px rgba(29, 29, 31, 0.08);
+}
+
+/* === Chat widget === */
+.chat-fab {
+  box-shadow: 0 10px 30px rgba(29, 29, 31, 0.18);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+.chat-fab:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 36px rgba(29, 29, 31, 0.24);
+}
+.chat-fab:active {
+  transform: scale(0.97);
+}
+
+.chat-panel {
+  box-shadow: 0 24px 70px rgba(29, 29, 31, 0.22);
+  transform-origin: bottom right;
+}
+.chat-bubble-in {
+  animation: chat-bubble-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes chat-bubble-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* The chat window rises out of the launcher, the greeting pops beside it. */
+.chat-panel-in {
+  transform-origin: bottom right;
+  animation: chat-panel-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes chat-panel-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.greeting-pop {
+  transform-origin: bottom right;
+  animation: greeting-pop 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes greeting-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.chat-typing span {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 3px;
+  border-radius: 9999px;
+  background: var(--silver);
+  animation: chat-typing 1s infinite ease-in-out;
+}
+.chat-typing span:nth-child(2) { animation-delay: 0.15s; }
+.chat-typing span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
 nav {
   transform: translate3d(0, 0, 0);
   -webkit-backface-visibility: hidden;

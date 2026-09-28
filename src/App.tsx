@@ -8,6 +8,7 @@ import type { PortfolioSearchResult } from '@/lib/search';
 import CustomCursor from '@/components/CustomCursor';
 import ReadingProgress from '@/components/ReadingProgress';
 import Navigation from '@/components/Navigation';
+import AIChatbot from '@/components/AIChatbot';
 import Hero from '@/sections/Hero';
 import ProfileSection from '@/sections/Profile';
 import Literature from '@/sections/Literature';
@@ -15,6 +16,7 @@ import Media from '@/sections/Media';
 import StudyMaterialSection from '@/sections/StudyMaterial';
 import FollowMe from '@/sections/FollowMe';
 import Extra from '@/sections/Extra';
+import CustomSections from '@/sections/CustomSections';
 
 // The admin dashboard is heavy and never needed on first paint.
 const AdminPanel = lazy(() => import('@/components/AdminPanel'));
@@ -105,12 +107,22 @@ function AppContent() {
       />
 
       {/* Main content */}
-      <main className="relative z-10 gpu-layer">
+      {/* NOTE: no transform/`will-change` on <main>. It would become the
+          containing block for every `position: fixed` descendant (reading
+          modal, media lightbox), which anchors them to the whole document
+          instead of the viewport and strands them off-screen on long pages. */}
+      <main className="relative z-10">
         <Hero profile={data.profile} visitorCount={data.visitorCount} onNavigate={handleNavigate} />
           {visibleSectionOrder.map((id) => {
             const render = sectionRenderers[id];
             return render ? <Fragment key={id}>{render()}</Fragment> : null;
           })}
+          {/* Admin-built sections, rendered in the Section Builder's order. */}
+          <CustomSections sections={data.customSections ?? []} />
+          {/* The chatbot lives inside <main> on purpose: <main> is its own
+              stacking context, so the section modals (z-9000) correctly cover
+              the launcher instead of it floating over the reader. */}
+          <AIChatbot />
       </main>
 
       <footer className="relative z-10 flex justify-center py-5 gpu-layer">
