@@ -63,7 +63,7 @@ export default function StudyMaterialSection({ materials, searchTarget }: StudyP
   };
 
   return (
-    <section id="study" className="section-shell px-4 sm:px-6 gpu-accelerated">
+    <section id="study" className="section-shell px-4 sm:px-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12 reveal gpu-layer">

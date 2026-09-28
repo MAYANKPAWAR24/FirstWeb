@@ -59,6 +59,17 @@ export default function TiltCard({ children, className = '', intensity = 12, glo
     <div
       ref={ref}
       className={`tilt-card ${glow ? 'glow-border' : ''} ${className}`}
+      // A clickable div is invisible to the custom cursor's tag selector and
+      // to the keyboard, so both are made explicit here.
+      data-cursor={onClick ? 'link' : undefined}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      } : undefined}
       onMouseMove={handleMove}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}

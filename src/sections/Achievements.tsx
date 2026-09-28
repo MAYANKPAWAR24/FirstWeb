@@ -38,7 +38,7 @@ export default function Achievements({ achievements, searchTarget }: Achievement
   const sorted = [...achievements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
-    <section id="achievements" className="section-shell px-4 sm:px-6 gpu-accelerated">
+    <section id="achievements" className="section-shell px-4 sm:px-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="text-center mb-16 reveal gpu-layer">
@@ -79,6 +79,7 @@ export default function Achievements({ achievements, searchTarget }: Achievement
                     <div className={`flex-1 sm:w-1/2 pl-12 sm:pl-0 ${isLeft ? 'sm:pr-12' : 'sm:pl-12'}`}>
                       <div
                         className="glass-card rounded-2xl p-6 group cursor-default"
+                        data-cursor="hidden"
                         onMouseEnter={() => sounds.hover()}
                       >
                         <div className="flex items-center gap-3 mb-3">

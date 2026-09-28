@@ -25,24 +25,27 @@
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 90px;
-  /* Let iOS/Android keep momentum scrolling and avoid rubber-band jank. */
   -webkit-text-size-adjust: 100%;
-  -webkit-overflow-scrolling: touch;
+  /* `hidden` first for legacy engines, then `clip`: clipping does not turn the
+     root into a scroll container, so `position: fixed` descendants and mobile
+     momentum scrolling keep working normally. */
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 body {
   font-family: 'Inter', 'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', sans-serif;
   background: #f5f5f7;
   color: var(--off-white);
-  overflow-x: hidden;
   cursor: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* GPU acceleration for smooth scrolling */
-  transform: translateZ(0);
-  will-change: scroll-position;
+  /* No transform / will-change on <body>, deliberately. Promoting it makes it
+     the containing block for every `position: fixed` descendant (nav, reading
+     bar, all modals) and forces a layer as tall as the whole document, which
+     is the classic source of scroll jank and of a pinned nav that scrolls
+     away. Scrolling is already compositor-driven without it. */
 }
 
 /* Applied by lockPageScroll() — overflow-based lock, never position:fixed. */
@@ -70,7 +73,6 @@ body.scroll-locked {
 
 @media (hover: none), (pointer: coarse) {
   body { cursor: auto; }
-  .cursor-dot, .cursor-ring { display: none; }
   /* Disable heavy effects on touch devices for performance */
   .hero-atmosphere { display: none; }
   .aurora-orb { display: none; }
@@ -176,158 +178,142 @@ body.scroll-locked {
   opacity: 1;
 }
 
-/* === Magnetic Cursor === */
-.cursor-dot {
+/* === Custom cursor (DOM + rAF/LERP, portalled to <body>) === */
+/* `position: fixed` is only viewport-relative because this layer is rendered
+   as a direct child of <body>. Do not move it back inside a transformed app
+   wrapper, or it will scroll away with the document. */
+.cc-root {
   position: fixed;
   top: 0;
   left: 0;
-  width: 10px;
-  height: 10px;
-  background: linear-gradient(135deg, #22d3ee 0%, #a78bfa 100%);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 2147483647; /* Max z-index */
-  transform: translate3d(-50%, -50%, 0);
-  will-change: transform;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  box-shadow: 
-    0 0 10px rgba(34, 211, 238, 0.8),
-    0 0 20px rgba(167, 139, 250, 0.5),
-    0 0 30px rgba(34, 211, 238, 0.3);
-  transition: width 0.2s, height 0.2s, background 0.2s, opacity 0.2s;
-  opacity: 1;
-}
-
-.cursor-ring {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 40px;
-  height: 40px;
-  border: 2px solid rgba(34, 211, 238, 0.6);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 2147483646;
-  transform: translate3d(-50%, -50%, 0);
-  will-change: transform;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  transition: width 0.3s, height 0.3s, border-color 0.3s, background 0.3s, opacity 0.3s;
-  opacity: 1;
-  box-shadow: 
-    0 0 15px rgba(34, 211, 238, 0.3),
-    inset 0 0 10px rgba(34, 211, 238, 0.1);
-}
-
-.cursor-hover .cursor-dot {
-  width: 0; height: 0;
-  opacity: 0;
-}
-.cursor-hover .cursor-ring {
-  width: 60px; height: 60px;
-  border-color: rgba(167, 139, 250, 0.8);
-  background: radial-gradient(circle, rgba(167, 139, 250, 0.15) 0%, transparent 70%);
-  box-shadow: 
-    0 0 25px rgba(167, 139, 250, 0.5),
-    inset 0 0 20px rgba(167, 139, 250, 0.2);
-}
-
-/* Ensure cursor stays on top of everything */
-.cursor-dot,
-.cursor-ring {
-  position: fixed !important;
+  /* Zero-size anchor: it never becomes a full-viewport hit target. */
+  width: 0;
+  height: 0;
+  z-index: 2147483647;
+  /* Clicks, taps, hovers, text selection and wheel events always pass through. */
   pointer-events: none !important;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Fade out when the pointer leaves the window... */
+  opacity: 0;
+  transition: opacity 160ms cubic-bezier(0.4, 0, 1, 1);
 }
 
-/* Disable magnetic cursor entirely if user prefers */
-.no-magnetic-cursor .cursor-dot,
-.no-magnetic-cursor .cursor-ring {
-  display: none !important;
+/* ...and reappear instantly, with no fade lag, on re-entry. */
+.cc-root.is-live {
+  opacity: 1;
+  transition: none;
 }
 
-/* === Ultra-Performance Cursor (120fps, no React state) === */
-.perf-cursor-dot {
+/* Nothing inside the cursor may ever take pointer input, including a future
+   pseudo-element. */
+.cc-root,
+.cc-root *,
+.cc-root *::before,
+.cc-root *::after {
+  pointer-events: none !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cc-dot,
+.cc-ring {
   position: fixed;
   top: 0;
   left: 0;
+  pointer-events: none !important;
+  /* JS writes `transform` every frame: it is the only animated property, and
+     it is deliberately absent from every transition list below so the rAF
+     loop never fights a CSS animation. */
+  transform: translate3d(0, 0, 0) translate(-50%, -50%);
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  opacity: 1;
+}
+
+.cc-dot {
   width: 6px;
   height: 6px;
   background: #1a1a2e;
   border-radius: 50%;
-  pointer-events: none;
-  z-index: 2147483647;
-  transform: translate3d(-50%, -50%, 0);
-  will-change: transform;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  opacity: 0;
   box-shadow: 0 0 0 1px rgba(26, 26, 46, 0.2), 0 0 8px rgba(26, 26, 46, 0.4);
+  transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1),
+              height 200ms cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.perf-cursor-ring {
-  position: fixed;
-  top: 0;
-  left: 0;
+.cc-ring {
   width: 36px;
   height: 36px;
   border: 1.5px solid rgba(26, 26, 46, 0.35);
   border-radius: 50%;
-  pointer-events: none;
-  z-index: 2147483646;
-  transform: translate3d(-50%, -50%, 0);
-  will-change: transform;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  opacity: 0;
-  background: 
-    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.15) 0%, transparent 50%),
-    radial-gradient(circle at 70% 70%, rgba(26,26,46,0.05) 0%, transparent 40%);
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 70% 70%, rgba(26, 26, 46, 0.05) 0%, transparent 40%);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  box-shadow: 
+  box-shadow:
     0 0 12px rgba(26, 26, 46, 0.15),
     inset 0 0 8px rgba(255, 255, 255, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              height 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              background 0.25s cubic-bezier(0.16, 1, 0.3, 1),
-              box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: width 250ms cubic-bezier(0.16, 1, 0.3, 1),
+              height 250ms cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 250ms cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 250ms cubic-bezier(0.16, 1, 0.3, 1),
+              background-image 250ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 250ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.cursor-hover .perf-cursor-dot {
+/* Hover state is a class on the root, derived from the event target. No
+   listener ever cancels or stops the mouse event. */
+.cc-root.is-hover .cc-dot {
   width: 0;
   height: 0;
   opacity: 0;
 }
 
-.cursor-hover .perf-cursor-ring {
+.cc-root.is-hover .cc-ring {
   width: 56px;
   height: 56px;
   border-color: rgba(26, 26, 46, 0.55);
-  background: 
-    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.2) 0%, transparent 50%),
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.2) 0%, transparent 50%),
     radial-gradient(circle, rgba(26, 26, 46, 0.08) 0%, transparent 65%);
-  box-shadow: 
+  box-shadow:
     0 0 20px rgba(26, 26, 46, 0.25),
     inset 0 0 12px rgba(255, 255, 255, 0.12),
     inset 0 2px 0 rgba(255, 255, 255, 0.2),
     0 0 32px rgba(26, 26, 46, 0.18);
 }
 
-@media (hover: none), (pointer: coarse) {
-  .perf-cursor-dot,
-  .perf-cursor-ring {
-    display: none !important;
-  }
+/* Opt-in blend-mode inversion. Off by default on purpose: `mix-blend-mode`
+   forces the browser to composite everything beneath the cursor into a
+   single blend surface, which is a measurable frame-rate cost while scrolling.
+   Enable by adding data-cursor-blend to <html>. */
+[data-cursor-blend] .cc-dot,
+[data-cursor-blend] .cc-ring {
+  mix-blend-mode: difference;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .perf-cursor-dot,
-  .perf-cursor-ring {
-    display: none !important;
-  }
+/* The native cursor is hidden only while the custom layer is live; the class
+   is added by CustomCursor and removed the moment it unmounts or when the
+   device is touch-only / reduced-motion. */
+html.custom-cursor-active,
+html.custom-cursor-active body {
+  cursor: none !important;
+}
+
+/* Neutralise legacy cursor utilities so the custom cursor is the only pointer. */
+html.custom-cursor-active [class*="cursor-pointer"],
+html.custom-cursor-active [class*="cursor-default"] {
+  cursor: none !important;
+}
+
+/* Keep the text caret usable while typing. */
+html.custom-cursor-active input,
+html.custom-cursor-active textarea {
+  cursor: text !important;
 }
 
 /* === Animations === */
@@ -382,20 +368,11 @@ body.scroll-locked {
 }
 .spin-slow { animation: spin-slow 8s linear infinite; }
 
-/* === Reveal on scroll === */
 /* === Reveal on scroll ===
-   Content is hidden only once <html> carries .reveal-ready, which the
-   useScrollReveal hook adds. If JS is disabled, blocked, or the GSAP setup
-   throws, the class is never added and every section remains visible. */
-.reveal-ready .reveal,
-.reveal-ready .hero-enter {
-  opacity: 0;
-}
-.no-motion .reveal,
-.no-motion .hero-enter {
-  opacity: 1;
-  transform: none;
-}
+   The GSAP ScrollTrigger hook that used to drive these is gone: it was dead
+   code that never ran, and a scroll-driven reveal is a scroll listener and a
+   layout mutation per section. Elements keep the `reveal` / `hero-enter` class
+   names for styling, but they now render statically and cost nothing to paint. */
 
 .hero-depth {
   position: absolute;
@@ -468,15 +445,16 @@ body.scroll-locked {
   font-synthesis: none;
 }
 
-/* === GPU Hardware Acceleration Utilities === */
+/* === GPU Hardware Acceleration Utilities ===
+   Only safe on small, already-fixed elements (the modal shells). Any transform
+   or `will-change: transform` here would turn the element into the containing
+   block for its `position: fixed` descendants, so never put this class on a
+   page-level wrapper or on a <section>. */
 .gpu-accelerated {
-  transform: translateZ(0);
-  -webkit-transform: translateZ(0);
-  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  -webkit-perspective: 1000;
-  perspective: 1000;
 }
 
 /* Force GPU layer for smooth animations */
@@ -734,10 +712,6 @@ nav {
   .hero-atmosphere {
     display: none;
   }
-}
-
-@media (hover: hover) and (pointer: fine) {
-  body { cursor: none; }
 }
 
 /* Inputs */

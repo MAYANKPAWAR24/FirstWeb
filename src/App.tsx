@@ -1,11 +1,11 @@
-import { lazy, Suspense, useEffect, useState, useCallback, useMemo } from 'react';
+import { lazy, Suspense, useEffect, useState, useCallback, useMemo, Fragment } from 'react';
 import { DataProvider, useData } from '@/lib/DataContext';
 import { ToastProvider, useToast } from '@/lib/ToastContext';
 import { sounds, setSoundEnabled, isSoundEnabled } from '@/lib/sound';
 import type { SectionId } from '@/lib/types';
 import type { PortfolioSearchResult } from '@/lib/search';
 
-import PerformanceCursor from '@/components/PerformanceCursor';
+import CustomCursor from '@/components/CustomCursor';
 import ReadingProgress from '@/components/ReadingProgress';
 import Navigation from '@/components/Navigation';
 import Hero from '@/sections/Hero';
@@ -85,9 +85,10 @@ function AppContent() {
   }, [soundOn, notify]);
 
   return (
-    <div className="premium-bg noise-overlay min-h-screen relative app-root gpu-accelerated">
-      {/* Premium effects */}
-      <PerformanceCursor />
+    <div className="premium-bg noise-overlay min-h-screen relative">
+      {/* Premium effects. Portalled to <body>, so it stays pinned to the
+          viewport regardless of the layout of this tree. */}
+      <CustomCursor />
       <ReadingProgress />
 
       {/* Navigation */}
@@ -106,10 +107,10 @@ function AppContent() {
       {/* Main content */}
       <main className="relative z-10 gpu-layer">
         <Hero profile={data.profile} visitorCount={data.visitorCount} onNavigate={handleNavigate} />
-        {visibleSectionOrder.map((id) => {
-          const render = sectionRenderers[id];
-          return render ? render() : null;
-        })}
+          {visibleSectionOrder.map((id) => {
+            const render = sectionRenderers[id];
+            return render ? <Fragment key={id}>{render()}</Fragment> : null;
+          })}
       </main>
 
       <footer className="relative z-10 flex justify-center py-5 gpu-layer">

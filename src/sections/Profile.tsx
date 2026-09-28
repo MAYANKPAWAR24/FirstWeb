@@ -8,7 +8,7 @@ interface ProfileSectionProps {
 
 export default function ProfileSection({ profile }: ProfileSectionProps) {
   return (
-    <section id="profile" className="section-shell px-4 sm:px-6 gpu-accelerated">
+    <section id="profile" className="section-shell px-4 sm:px-6">
       <div className="max-w-6xl mx-auto">
         {/* Section header */}
         <div className="text-center mb-16 reveal gpu-layer">

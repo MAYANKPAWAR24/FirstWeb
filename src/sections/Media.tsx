@@ -58,7 +58,7 @@ export default function Media({ items, searchTarget }: MediaProps) {
   const hasOverflow = filtered.length > itemLimit;
 
   return (
-    <section id="media" className="section-shell px-4 sm:px-6 gpu-accelerated">
+    <section id="media" className="section-shell px-4 sm:px-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12 reveal gpu-layer">
@@ -94,6 +94,7 @@ export default function Media({ items, searchTarget }: MediaProps) {
                 key={item.id}
                 id={`search-target-media-${item.id}`}
                 className={`reveal group ${item.type === 'music' ? '' : 'cursor-pointer'}`}
+                data-cursor={item.type === 'music' ? 'hidden' : 'link'}
                 style={{ transitionDelay: `${i * 50}ms` }}
                 onClick={() => {
                   if (item.type !== 'music') {

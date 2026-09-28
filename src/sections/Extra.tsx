@@ -101,7 +101,7 @@ export default function Extra({ searchTarget, showAchievements = true }: ExtraPr
   };
 
   return (
-    <section id="extra" className="section-shell px-4 sm:px-6 gpu-accelerated">
+    <section id="extra" className="section-shell px-4 sm:px-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-16 reveal gpu-layer">

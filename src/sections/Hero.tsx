@@ -21,7 +21,7 @@ export default function Hero({ profile, visitorCount, onNavigate }: HeroProps) {
   const [greeting] = useState(getGreeting);
 
   return (
-    <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden px-4 sm:px-6 pt-24 pb-16 gpu-accelerated">
+    <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden px-4 sm:px-6 pt-24 pb-16">
       <div className="hero-depth hero-depth-back gpu-layer" data-parallax="0.12" aria-hidden="true">
         <span>MEGISTO</span>
       </div>

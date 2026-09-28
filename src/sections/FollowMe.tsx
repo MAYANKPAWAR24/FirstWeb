@@ -26,7 +26,7 @@ export default function FollowMe({ socials }: FollowMeProps) {
   );
 
   return (
-    <section id="follow" className="section-shell px-4 sm:px-6 gpu-accelerated">
+    <section id="follow" className="section-shell px-4 sm:px-6">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12 reveal gpu-layer">
           <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Around the web</p>

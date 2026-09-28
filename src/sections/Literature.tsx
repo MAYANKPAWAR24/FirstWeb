@@ -75,7 +75,7 @@ export default function Literature({ poems, searchTarget }: LiteratureProps) {
   const hasOverflow = filtered.length > itemLimit;
 
   return (
-    <section id="literature" className="section-shell px-4 sm:px-6 gpu-accelerated">
+    <section id="literature" className="section-shell px-4 sm:px-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12 reveal gpu-layer">
