@@ -90,10 +90,8 @@ function AppContent() {
   const handleNavigate = useCallback((id: SectionId) => {
     const el = document.getElementById(id);
     if (el) {
-      el.scrollIntoView({
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-        block: 'start',
-      });
+      const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - 90);
+      window.scrollTo({ top, behavior: 'instant' });
     }
   }, []);
 

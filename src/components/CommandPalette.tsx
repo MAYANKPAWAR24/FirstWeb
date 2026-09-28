@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { Command, X } from 'lucide-react';
 import { sounds } from '@/lib/sound';
 import type { SectionId } from '@/lib/types';
 
@@ -32,8 +33,8 @@ export default function CommandPalette({
     { id: 'literature', label: 'Literature — Poems & Novels', icon: 'BookOpen' },
     { id: 'media', label: 'Media — Photos & Videos', icon: 'Image' },
     { id: 'study', label: 'Study Material', icon: 'GraduationCap' },
-    { id: 'follow', label: 'Follow Me', icon: 'AtSign' },
     { id: 'extra', label: 'Extra — Guestbook & Contact', icon: 'Sparkles' },
+    { id: 'follow', label: 'Follow Me', icon: 'AtSign' },
   ];
 
   const commands: CommandItem[] = [
@@ -103,7 +104,7 @@ export default function CommandPalette({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
-          <span className="text-cyan-400 text-lg">⌘</span>
+          <Command size={19} className="shrink-0 text-cyan-400" aria-hidden="true" />
           <input
             ref={inputRef}
             type="text"
@@ -114,6 +115,15 @@ export default function CommandPalette({
             className="flex-1 bg-transparent text-white placeholder-white/40 outline-none text-sm font-medium"
           />
           <kbd className="text-xs text-white/40 border border-white/15 rounded px-2 py-0.5">ESC</kbd>
+          <button
+            type="button"
+            onClick={() => { sounds.click(); onClose(); }}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg glass text-white/60 transition-colors hover:text-white"
+            aria-label="Close command palette"
+            title="Close"
+          >
+            <X size={17} aria-hidden="true" />
+          </button>
         </div>
         <div className="max-h-[50vh] overflow-y-auto p-2">
           {filtered.length === 0 && (

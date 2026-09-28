@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AtSign, BookOpen, Command, GraduationCap, Image, Sparkles, User, type LucideIcon } from 'lucide-react';
 import { sounds } from '@/lib/sound';
 import type { SectionId } from '@/lib/types';
 
@@ -10,13 +11,13 @@ interface NavProps {
   onToggleSound: () => void;
 }
 
-const NAV_ITEMS: { id: SectionId; label: string }[] = [
-  { id: 'profile', label: 'Profile' },
-  { id: 'literature', label: 'Literature' },
-  { id: 'media', label: 'Media' },
-  { id: 'study', label: 'Study' },
-  { id: 'follow', label: 'Follow Me' },
-  { id: 'extra', label: 'Extra' },
+const NAV_ITEMS: { id: SectionId; label: string; icon: LucideIcon }[] = [
+  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'literature', label: 'Literature', icon: BookOpen },
+  { id: 'media', label: 'Media', icon: Image },
+  { id: 'study', label: 'Study', icon: GraduationCap },
+  { id: 'extra', label: 'Extra', icon: Sparkles },
+  { id: 'follow', label: 'Follow Me', icon: AtSign },
 ];
 
 export default function Navigation({ onNavigate, onOpenCommand, activeSection, soundOn, onToggleSound }: NavProps) {
@@ -53,21 +54,25 @@ export default function Navigation({ onNavigate, onOpenCommand, activeSection, s
 
             {/* Desktop nav */}
             <div className="hidden lg:flex items-center gap-1">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleClick(item.id)}
-                  onMouseEnter={() => sounds.hover()}
-                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all relative
-                    ${activeSection === item.id ? 'text-cyan-300' : 'text-white/60 hover:text-white'}
-                  `}
-                >
-                  {item.label}
-                  {activeSection === item.id && (
-                    <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                  )}
-                </button>
-              ))}
+              {NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleClick(item.id)}
+                    onMouseEnter={() => sounds.hover()}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all relative
+                      ${activeSection === item.id ? 'text-cyan-300' : 'text-white/60 hover:text-white'}
+                    `}
+                  >
+                    <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
+                    {item.label}
+                    {activeSection === item.id && (
+                      <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Actions */}
@@ -85,7 +90,9 @@ export default function Navigation({ onNavigate, onOpenCommand, activeSection, s
                 onMouseEnter={() => sounds.hover()}
                 className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl glass text-xs text-white/50 hover:text-white transition-colors"
                 title="Open command palette"
+                aria-label="Open command palette (Command K)"
               >
+                <Command size={15} strokeWidth={1.8} aria-hidden="true" />
                 <span>⌘K</span>
               </button>
               {/* Mobile toggle */}
@@ -106,21 +113,26 @@ export default function Navigation({ onNavigate, onOpenCommand, activeSection, s
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
           <div className="relative pt-24 px-4 animate-slide-right">
             <div className="glass-strong rounded-2xl p-4 space-y-1">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleClick(item.id)}
-                  className={`w-full text-left px-4 py-3 rounded-xl text-sm font-medium transition-all
-                    ${activeSection === item.id ? 'bg-cyan-500/15 text-cyan-300' : 'text-white/70 hover:bg-white/5'}
-                  `}
-                >
-                  {item.label}
-                </button>
-              ))}
+              {NAV_ITEMS.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => handleClick(item.id)}
+                    className={`flex w-full items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all
+                      ${activeSection === item.id ? 'bg-cyan-500/15 text-cyan-300' : 'text-white/70 hover:bg-white/5'}
+                    `}
+                  >
+                    <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
+                    {item.label}
+                  </button>
+                );
+              })}
               <button
                 onClick={() => { sounds.click(); onOpenCommand(); setMobileOpen(false); }}
-                className="w-full text-left px-4 py-3 rounded-xl text-sm font-medium text-white/70 hover:bg-white/5"
+                className="flex w-full items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium text-white/70 hover:bg-white/5"
               >
+                <Command size={17} strokeWidth={1.8} aria-hidden="true" />
                 Command Palette (⌘K)
               </button>
             </div>

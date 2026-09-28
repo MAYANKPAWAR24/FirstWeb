@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Music2 } from 'lucide-react';
 import { useData } from '@/lib/DataContext';
 import { useToast } from '@/lib/ToastContext';
 import { sounds } from '@/lib/sound';
@@ -518,7 +519,13 @@ function MediaAdmin() {
         {data.media.map((m) => (
           <ItemCard key={m.id} onEdit={() => { setEditing(m); setShowForm(true); }} onDelete={() => { deleteMedia(m.id); notify('Deleted', 'info'); }}>
             <div className="flex items-center gap-3">
-              <img src={m.thumbnail} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
+              {m.thumbnail ? (
+                <img src={m.thumbnail} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
+              ) : (
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-cyan-950 text-cyan-300">
+                  <Music2 size={20} aria-hidden="true" />
+                </div>
+              )}
               <div className="min-w-0">
                 <p className="font-semibold text-sm truncate">{m.title}</p>
                 <p className="text-xs text-white/40 capitalize">{m.type} · {m.category}</p>
@@ -570,15 +577,21 @@ function MediaForm({ item, onClose, onSave, blank }: {
           <select value={form.type} onChange={(e) => update('type', e.target.value)} className={inputCls}>
             <option value="photo">Photo</option>
             <option value="video">Video (YouTube)</option>
+              <option value="music">Music (Audio file)</option>
           </select>
         </FormField>
         <FormField label="Title">
           <input value={form.title} onChange={(e) => update('title', e.target.value)} className={inputCls} />
         </FormField>
-        <FormField label={form.type === 'video' ? 'YouTube Embed URL' : 'Image URL'}>
-          <input value={form.url} onChange={(e) => handleUrlChange(e.target.value)} className={inputCls} placeholder={form.type === 'video' ? 'https://www.youtube.com/embed/...' : 'https://...'} />
+        <FormField label={form.type === 'video' ? 'YouTube Embed URL' : form.type === 'music' ? 'Audio File URL' : 'Image URL'}>
+          <input
+            value={form.url}
+            onChange={(e) => handleUrlChange(e.target.value)}
+            className={inputCls}
+            placeholder={form.type === 'video' ? 'https://www.youtube.com/embed/...' : form.type === 'music' ? 'https://.../track.mp3' : 'https://...'}
+          />
         </FormField>
-        <FormField label="Thumbnail URL">
+        <FormField label={form.type === 'music' ? 'Cover Image URL (optional)' : 'Thumbnail URL'}>
           <input value={form.thumbnail} onChange={(e) => update('thumbnail', e.target.value)} className={inputCls} />
         </FormField>
         <div className="grid grid-cols-2 gap-4">

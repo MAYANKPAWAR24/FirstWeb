@@ -2,22 +2,24 @@ import type { SectionId } from './types';
 
 export type PublicSectionId = Exclude<SectionId, 'home'>;
 
-export const SECTION_ORDER_KEY = 'portfolio_section_order_v1';
+export const SECTION_ORDER_KEY = 'portfolio_section_order_v2';
+const LEGACY_SECTION_ORDER_KEY = 'portfolio_section_order_v1';
 
 export const PUBLIC_SECTIONS: { id: PublicSectionId; label: string }[] = [
   { id: 'profile', label: 'Profile' },
   { id: 'literature', label: 'Literature' },
   { id: 'media', label: 'Media' },
   { id: 'study', label: 'Study Material' },
-  { id: 'follow', label: 'Follow Me' },
   { id: 'extra', label: 'Extra' },
+  { id: 'follow', label: 'Follow Me' },
 ];
 
 export const DEFAULT_SECTION_ORDER = PUBLIC_SECTIONS.map(({ id }) => id);
 
 export function loadSectionOrder(): PublicSectionId[] {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(SECTION_ORDER_KEY) ?? 'null');
+    const currentOrder = localStorage.getItem(SECTION_ORDER_KEY);
+    const parsed: unknown = JSON.parse(currentOrder ?? localStorage.getItem(LEGACY_SECTION_ORDER_KEY) ?? 'null');
     if (!Array.isArray(parsed)) return [...DEFAULT_SECTION_ORDER];
 
     const validIds = new Set(DEFAULT_SECTION_ORDER);
@@ -26,7 +28,11 @@ export function loadSectionOrder(): PublicSectionId[] {
       (id): id is PublicSectionId => typeof id === 'string' && validIds.has(id as PublicSectionId)
     );
     const unique = [...new Set(saved)];
-    return [...unique, ...DEFAULT_SECTION_ORDER.filter((id) => !unique.includes(id))];
+    const completeOrder = [...unique, ...DEFAULT_SECTION_ORDER.filter((id) => !unique.includes(id))];
+    if (currentOrder === null) {
+      return [...completeOrder.filter((id) => id !== 'follow'), 'follow'];
+    }
+    return completeOrder;
   } catch {
     return [...DEFAULT_SECTION_ORDER];
   }

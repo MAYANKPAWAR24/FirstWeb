@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Music2 } from 'lucide-react';
 import { sounds } from '@/lib/sound';
 import type { MediaItem } from '@/lib/types';
 
@@ -6,7 +7,7 @@ interface MediaProps {
   items: MediaItem[];
 }
 
-type MediaFilter = 'all' | 'photo' | 'video';
+type MediaFilter = 'all' | 'photo' | 'video' | 'music';
 
 export default function Media({ items }: MediaProps) {
   const [filter, setFilter] = useState<MediaFilter>('all');
@@ -24,12 +25,12 @@ export default function Media({ items }: MediaProps) {
           <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Visual Stories</p>
           <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Media</h2>
           <div className="heading-line mx-auto mb-6" />
-          <p className="text-white/50 max-w-xl mx-auto text-sm">A gallery of moments — through lens and lens flare.</p>
+          <p className="text-white/50 max-w-xl mx-auto text-sm">Photos, videos, and original music.</p>
         </div>
 
         {/* Filter */}
         <div className="flex items-center justify-center gap-2 mb-10 reveal">
-          {(['all', 'photo', 'video'] as MediaFilter[]).map((f) => (
+          {(['all', 'photo', 'video', 'music'] as MediaFilter[]).map((f) => (
             <button
               key={f}
               onClick={() => { sounds.click(); setFilter(f); }}
@@ -38,7 +39,7 @@ export default function Media({ items }: MediaProps) {
                 ${filter === f ? 'btn-premium text-white' : 'glass text-white/50 hover:text-white/80'}
               `}
             >
-              {f === 'all' ? 'All' : f === 'photo' ? 'Photos' : 'Videos'}
+              {f === 'all' ? 'All' : f === 'photo' ? 'Photos' : f === 'video' ? 'Videos' : 'Music'}
             </button>
           ))}
         </div>
@@ -51,25 +52,36 @@ export default function Media({ items }: MediaProps) {
             {filtered.map((item, i) => (
               <div
                 key={item.id}
-                className="reveal group cursor-pointer"
+                className={`reveal group ${item.type === 'music' ? '' : 'cursor-pointer'}`}
                 style={{ transitionDelay: `${i * 50}ms` }}
-                onClick={() => { sounds.open(); setLightbox(item); }}
+                onClick={() => {
+                  if (item.type !== 'music') {
+                    sounds.open();
+                    setLightbox(item);
+                  }
+                }}
                 onMouseEnter={() => sounds.hover()}
               >
                 <div className="glass-card rounded-2xl overflow-hidden relative">
                   <div className="relative aspect-video overflow-hidden">
-                    <img
-                      src={item.thumbnail}
-                      alt={item.title}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                      loading="lazy"
-                    />
+                    {item.thumbnail ? (
+                      <img
+                        src={item.thumbnail}
+                        alt={item.title}
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center bg-gradient-to-br from-cyan-950 to-slate-900 text-cyan-300">
+                        <Music2 size={42} strokeWidth={1.3} aria-hidden="true" />
+                      </div>
+                    )}
                     <div className="media-image-shade absolute inset-0 opacity-60 group-hover:opacity-80 transition-opacity" />
 
                     {/* Type badge */}
                     <div className="absolute top-3 left-3">
                       <span className="media-type-badge px-3 py-1 rounded-full bg-black/40 backdrop-blur-md text-xs font-medium text-white">
-                        {item.type === 'photo' ? '📷 Photo' : '▶ Video'}
+                        {item.type === 'photo' ? 'Photo' : item.type === 'video' ? 'Video' : 'Music'}
                       </span>
                     </div>
 
@@ -90,6 +102,13 @@ export default function Media({ items }: MediaProps) {
                       </div>
                     </div>
                   </div>
+                  {item.type === 'music' && (
+                    <div className="p-4">
+                      <audio controls preload="none" src={item.url} className="w-full" aria-label={`Play ${item.title}`}>
+                        Your browser does not support audio playback.
+                      </audio>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -133,7 +152,7 @@ function MediaLightbox({ item, onClose }: { item: MediaItem; onClose: () => void
           <div className="p-4">
             {item.type === 'photo' ? (
               <img src={item.url} alt={item.title} className="w-full rounded-2xl" />
-            ) : (
+            ) : item.type === 'video' ? (
               <div className="aspect-video rounded-2xl overflow-hidden">
                 <iframe
                   src={item.url}
@@ -143,6 +162,10 @@ function MediaLightbox({ item, onClose }: { item: MediaItem; onClose: () => void
                   allowFullScreen
                 />
               </div>
+            ) : (
+              <audio controls autoPlay src={item.url} className="w-full">
+                Your browser does not support audio playback.
+              </audio>
             )}
           </div>
         </div>

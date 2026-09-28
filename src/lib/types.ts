@@ -40,7 +40,7 @@ export interface Poem {
 
 export interface MediaItem {
   id: string;
-  type: 'photo' | 'video';
+  type: 'photo' | 'video' | 'music';
   title: string;
   url: string;
   thumbnail: string;

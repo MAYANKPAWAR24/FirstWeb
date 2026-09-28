@@ -5,6 +5,7 @@ import { uid } from './utils';
 
 const STORAGE_KEY = 'portfolio_data_v1';
 const VISITOR_KEY = 'portfolio_visitor_counted';
+const SOCIAL_LINKS_MIGRATION_KEY = 'portfolio_social_links_v3';
 
 interface DataContextValue {
   data: PortfolioData;
@@ -52,7 +53,9 @@ export function useData() {
 }
 
 function loadData(): PortfolioData {
+  let shouldMigrateSocialLinks = false;
   try {
+    shouldMigrateSocialLinks = localStorage.getItem(SOCIAL_LINKS_MIGRATION_KEY) !== 'true';
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<PortfolioData>;
@@ -67,6 +70,10 @@ function loadData(): PortfolioData {
             const existing = parsed.profile?.socials?.find((social) => (
               social.id === defaultSocial.id || social.icon === legacyIcon || social.label === defaultSocial.label
             ));
+            const addedPlatform = defaultSocial.id === 'threads' || defaultSocial.id === 'telegram';
+            if (shouldMigrateSocialLinks && addedPlatform) {
+              return { ...defaultSocial, ...existing, url: defaultSocial.url, visible: true };
+            }
             return {
               ...defaultSocial,
               ...existing,
@@ -111,6 +118,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     saveData(data);
+    try { localStorage.setItem(SOCIAL_LINKS_MIGRATION_KEY, 'true'); } catch { /* Ignore unavailable storage. */ }
   }, [data]);
 
   // Increment visitor count once per session

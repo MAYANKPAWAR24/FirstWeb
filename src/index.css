@@ -31,7 +31,7 @@ body {
   font-family: 'Inter', 'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', sans-serif;
   background: #f5f5f7;
   color: var(--off-white);
-  overflow-x: hidden;
+  overflow-x: clip;
   cursor: none;
 }
 

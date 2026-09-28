@@ -25,11 +25,11 @@ export const seedData: PortfolioData = {
       { id: 'instagram', label: 'Instagram', url: 'https://instagram.com/mayankpawar', icon: 'Instagram', visible: true },
       { id: 'facebook', label: 'Facebook', url: 'https://facebook.com/mayankpawar', icon: 'Facebook', visible: false },
       { id: 'linkedin', label: 'LinkedIn', url: 'https://linkedin.com/in/mayankpawar', icon: 'Linkedin', visible: true },
-      { id: 'threads', label: 'Threads', url: 'https://threads.net/@mayankpawar', icon: 'Threads', visible: false },
+      { id: 'threads', label: 'Threads', url: 'https://threads.net/@mayankpawar', icon: 'Threads', visible: true },
       { id: 'twitter', label: 'Twitter / X', url: 'https://x.com/mayankpawar', icon: 'Twitter', visible: true },
       { id: 'youtube', label: 'YouTube', url: 'https://youtube.com/@mayankpawar', icon: 'Youtube', visible: true },
       { id: 'github', label: 'GitHub', url: 'https://github.com/mayankpawar', icon: 'Github', visible: true },
-      { id: 'telegram', label: 'Telegram', url: 'https://t.me/mayankpawar', icon: 'Telegram', visible: false },
+      { id: 'telegram', label: 'Telegram', url: 'https://t.me/mayankpawar', icon: 'Telegram', visible: true },
     ],
   },
   poems: [
