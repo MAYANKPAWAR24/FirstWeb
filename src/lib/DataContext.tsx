@@ -1,5 +1,9 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
-import type { PortfolioData, Poem, MediaItem, StudyMaterial, Achievement, Certificate, GuestbookEntry, Profile } from './types';
+import type {
+  PortfolioData, Poem, MediaItem, StudyMaterial, Achievement, Certificate, GuestbookEntry, Profile,
+  CustomSection, ChatbotFAQ, CustomSectionType, MiniGameKind,
+} from './types';
+import { CUSTOM_SECTION_TYPES, MINI_GAME_KINDS } from './types';
 import { seedData } from './seedData';
 import { uid } from './utils';
 import {
@@ -19,18 +23,115 @@ const SOCIAL_LINKS_MIGRATION_KEY = 'portfolio_social_links_v3';
 const POEM_TYPES = new Set(['poem', 'novel', 'article']);
 const MEDIA_TYPES = new Set(['photo', 'video', 'music']);
 
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function asString(value: unknown, fallback = '') {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function asArray(value: unknown) {
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Normalizes custom sections coming from the cloud record.
+ * Anything malformed is dropped rather than thrown, so a corrupt or older
+ * record can never crash the public page.
+ */
+function normalizeCustomSections(value: unknown): CustomSection[] {
+  return asArray(value)
+    .filter(isRecord)
+    .map((raw): CustomSection | null => {
+      const id = asString(raw.id).trim();
+      const title = asString(raw.title).trim();
+      if (!id || !title) return null;
+      const type = CUSTOM_SECTION_TYPES.includes(raw.type as CustomSectionType) ? raw.type as CustomSectionType : 'text';
+      const game = MINI_GAME_KINDS.includes(raw.game as MiniGameKind) ? raw.game as MiniGameKind : 'tic-tac-toe';
+      return {
+        id,
+        title,
+        type,
+        game,
+        category: asString(raw.category),
+        content: asString(raw.content),
+        mediaUrl: asString(raw.mediaUrl),
+        linkLabel: asString(raw.linkLabel),
+        isVisible: raw.isVisible !== false,
+        createdAt: asString(raw.createdAt) || new Date().toISOString(),
+      };
+    })
+    .filter((section): section is CustomSection => section !== null);
+}
+
+/**
+ * Normalizes the admin-managed chatbot knowledge base.
+ * Accepts BOTH shapes on purpose: the managed one
+ * (`{ id, question, answer, keywords, enabled }`) and the permanent embedded
+ * dataset (`{ keywords, response }`) that can be pasted straight into the
+ * JSONBin `chatbotFAQs` array. Missing ids/labels are generated, and entries
+ * without any usable text are dropped instead of throwing.
+ */
+function normalizeChatbotFAQs(value: unknown): ChatbotFAQ[] {
+  return asArray(value)
+    .filter(isRecord)
+    .map((raw, index): ChatbotFAQ | null => {
+      const keywords = asArray(raw.keywords)
+        .filter((keyword): keyword is string => typeof keyword === 'string')
+        .map((keyword) => keyword.trim().toLowerCase())
+        .filter(Boolean);
+      const answer = (typeof raw.answer === 'string' ? raw.answer : typeof raw.response === 'string' ? raw.response : '').trim();
+      if (!answer) return null;
+      const question = asString(raw.question).trim() || keywords[0] || `Answer ${index + 1}`;
+      return {
+        id: asString(raw.id).trim() || uid(),
+        question,
+        answer,
+        keywords,
+        enabled: raw.enabled !== false,
+      };
+    })
+    .filter((faq): faq is ChatbotFAQ => faq !== null);
+}
+
 function normalizeContentTypes(data: PortfolioData): PortfolioData {
   return {
     ...data,
-    poems: data.poems.map((poem) => ({
+    poems: asArray(data.poems).map((poem) => ({
       ...poem,
       type: POEM_TYPES.has(poem.type) ? poem.type : 'poem',
     })),
-    media: data.media.map((item) => ({
+    media: asArray(data.media).map((item) => ({
       ...item,
       type: MEDIA_TYPES.has(item.type) ? item.type : 'photo',
     })),
   };
+}
+
+/**
+ * Single entry point that turns any (possibly partial, possibly ancient) payload
+ * into a complete, render-safe PortfolioData. New keys always fall back to
+ * `[]`, so records saved before a feature existed still load cleanly.
+ */
+function normalizeData(input: Partial<PortfolioData> | null | undefined): PortfolioData {
+  const source = isRecord(input) ? (input as Partial<PortfolioData>) : {};
+  return normalizeContentTypes({
+    ...seedData,
+    ...source,
+    profile: { ...seedData.profile, ...(isRecord(source.profile) ? source.profile : {}) },
+    poems: asArray(source.poems ?? seedData.poems),
+    media: asArray(source.media ?? seedData.media),
+    studyMaterials: asArray(source.studyMaterials ?? seedData.studyMaterials),
+    achievements: asArray(source.achievements ?? seedData.achievements),
+    certificates: asArray(source.certificates ?? seedData.certificates),
+    guestbook: asArray(source.guestbook ?? seedData.guestbook),
+    customSections: normalizeCustomSections(source.customSections),
+    chatbotFAQs: source.chatbotFAQs === undefined ? seedData.chatbotFAQs : normalizeChatbotFAQs(source.chatbotFAQs),
+    visitorCount: Number.isFinite(source.visitorCount) ? Number(source.visitorCount) : seedData.visitorCount,
+  });
 }
 
 interface DataContextValue {
@@ -70,6 +171,16 @@ interface DataContextValue {
   addGuestbookEntry: (entry: Omit<GuestbookEntry, 'id'>) => Promise<void>;
   updateGuestbookEntry: (id: string, entry: Partial<GuestbookEntry>) => void;
   deleteGuestbookEntry: (id: string) => void;
+  // Custom sections (Section Builder)
+  addCustomSection: (section: Omit<CustomSection, 'id'>) => void;
+  updateCustomSection: (id: string, section: Partial<CustomSection>) => void;
+  deleteCustomSection: (id: string) => void;
+  toggleCustomSectionVisible: (id: string) => void;
+  moveCustomSection: (id: string, direction: -1 | 1) => void;
+  // Chatbot knowledge base
+  addChatbotFAQ: (faq: Omit<ChatbotFAQ, 'id'>) => void;
+  updateChatbotFAQ: (id: string, faq: Partial<ChatbotFAQ>) => void;
+  deleteChatbotFAQ: (id: string) => void;
   // Admin password
   setAdminPassword: (pw: string) => Promise<void>;
   // Drafts
@@ -130,7 +241,7 @@ function loadData(): PortfolioData {
       data.poems = data.poems.map((poem) => (
         poem.author === 'Aarav Mehta' ? { ...poem, author: 'MAYANK PAWAR' } : poem
       ));
-      return normalizeContentTypes(data);
+      return normalizeData(data);
     }
   } catch {
     // ignore
@@ -164,7 +275,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .then((snapshot) => {
         if (!active) return;
         const recentEntries = submittedDuringLoad.current;
-        setData((current) => normalizeContentTypes({
+        setData((current) => normalizeData({
           ...current,
           ...snapshot.data,
           profile: { ...current.profile, ...snapshot.data.profile },
@@ -173,20 +284,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
           studyMaterials: snapshot.data.studyMaterials ?? current.studyMaterials,
           achievements: snapshot.data.achievements ?? current.achievements,
           certificates: snapshot.data.certificates ?? current.certificates,
+          // Newer keys: a record written before the feature simply has none of
+          // them, so keep the local (seeded) values instead of blanking them.
+          customSections: snapshot.data.customSections ?? current.customSections,
+          chatbotFAQs: snapshot.data.chatbotFAQs ?? current.chatbotFAQs,
           guestbook: [
             ...recentEntries.filter((entry) => !(snapshot.data.guestbook ?? []).some((saved) => saved.id === entry.id)),
             ...(snapshot.data.guestbook ?? current.guestbook),
           ],
           visitorCount: snapshot.data.visitorCount ?? current.visitorCount,
         }));
-        setSectionOrder(snapshot.sectionOrder);
+        setSectionOrder(Array.isArray(snapshot.sectionOrder) ? snapshot.sectionOrder : loadSectionOrder());
         submittedDuringLoad.current = [];
         // Only adopt the cloud visibility map when the record actually carries
         // one. A bin created before this feature returns {} and must not wipe
         // the admin's locally saved hide/unhide choices.
         setSectionVisibility((current) =>
-          snapshot.sectionVisibility && Object.keys(snapshot.sectionVisibility).length > 0
-            ? snapshot.sectionVisibility
+          isRecord(snapshot.sectionVisibility) && Object.keys(snapshot.sectionVisibility).length > 0
+            ? snapshot.sectionVisibility as SectionVisibility
             : current
         );
         setIsAdmin(snapshot.isAdmin);
@@ -369,6 +484,85 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setData((d) => ({ ...d, guestbook: d.guestbook.map((g) => g.id === id ? { ...g, ...entry } : g) }));
   }, []);
 
+  const addCustomSection = useCallback((section: Omit<CustomSection, 'id'>) => {
+    setData((d) => ({
+      ...d,
+      customSections: [
+        ...d.customSections,
+        {
+          ...section,
+          id: uid(),
+          title: section.title.trim() || 'Untitled Section',
+          category: section.category.trim(),
+          content: section.content ?? '',
+          mediaUrl: section.mediaUrl ?? '',
+          linkLabel: section.linkLabel ?? '',
+          isVisible: section.isVisible !== false,
+          createdAt: section.createdAt || new Date().toISOString(),
+        },
+      ],
+    }));
+  }, []);
+
+  const updateCustomSection = useCallback((id: string, section: Partial<CustomSection>) => {
+    setData((d) => ({
+      ...d,
+      customSections: d.customSections.map((item) => (item.id === id ? { ...item, ...section } : item)),
+    }));
+  }, []);
+
+  const deleteCustomSection = useCallback((id: string) => {
+    setData((d) => ({ ...d, customSections: d.customSections.filter((item) => item.id !== id) }));
+  }, []);
+
+  const toggleCustomSectionVisible = useCallback((id: string) => {
+    setData((d) => ({
+      ...d,
+      customSections: d.customSections.map((item) => (
+        item.id === id ? { ...item, isVisible: item.isVisible === false } : item
+      )),
+    }));
+  }, []);
+
+  const moveCustomSection = useCallback((id: string, direction: -1 | 1) => {
+    setData((d) => {
+      const index = d.customSections.findIndex((item) => item.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= d.customSections.length) return d;
+      const next = [...d.customSections];
+      [next[index], next[target]] = [next[target], next[index]];
+      return { ...d, customSections: next };
+    });
+  }, []);
+
+  const addChatbotFAQ = useCallback((faq: Omit<ChatbotFAQ, 'id'>) => {
+    setData((d) => ({
+      ...d,
+      chatbotFAQs: [
+        ...d.chatbotFAQs,
+        {
+          ...faq,
+          id: uid(),
+          question: faq.question.trim(),
+          answer: faq.answer.trim(),
+          keywords: (faq.keywords ?? []).map((keyword) => keyword.trim()).filter(Boolean),
+          enabled: faq.enabled !== false,
+        },
+      ],
+    }));
+  }, []);
+
+  const updateChatbotFAQ = useCallback((id: string, faq: Partial<ChatbotFAQ>) => {
+    setData((d) => ({
+      ...d,
+      chatbotFAQs: d.chatbotFAQs.map((item) => (item.id === id ? { ...item, ...faq } : item)),
+    }));
+  }, []);
+
+  const deleteChatbotFAQ = useCallback((id: string) => {
+    setData((d) => ({ ...d, chatbotFAQs: d.chatbotFAQs.filter((item) => item.id !== id) }));
+  }, []);
+
   const setAdminPassword = useCallback(async (pw: string) => {
     await changeCloudAdminPassword(pw);
   }, []);
@@ -403,6 +597,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addAchievement, updateAchievement, deleteAchievement,
     addCertificate, updateCertificate, deleteCertificate,
     addGuestbookEntry, updateGuestbookEntry, deleteGuestbookEntry,
+    addCustomSection, updateCustomSection, deleteCustomSection, toggleCustomSectionVisible, moveCustomSection,
+    addChatbotFAQ, updateChatbotFAQ, deleteChatbotFAQ,
     setAdminPassword, saveDraft, loadDraft, clearDraft,
   };
 

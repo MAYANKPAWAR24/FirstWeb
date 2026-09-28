@@ -1,10 +1,15 @@
 import type { PortfolioData } from './types';
 import type { PublicSectionId, SectionVisibility } from './sectionOrder';
 
+/**
+ * The API echoes back the raw record, so `sectionOrder` / `sectionVisibility`
+ * are null on any bin created before those features existed. They are typed as
+ * nullable on purpose: every consumer must fall back instead of trusting them.
+ */
 export interface CloudSnapshot {
   data: Partial<PortfolioData>;
-  sectionOrder: PublicSectionId[];
-  sectionVisibility: SectionVisibility;
+  sectionOrder?: PublicSectionId[] | null;
+  sectionVisibility?: SectionVisibility | null;
   isAdmin: boolean;
 }
 

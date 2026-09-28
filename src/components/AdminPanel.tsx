@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AtSign, Eye, EyeOff, Music2 } from 'lucide-react';
 import { useData } from '@/lib/DataContext';
 import { useToast } from '@/lib/ToastContext';
 import { sounds } from '@/lib/sound';
 import { formatDate, lockPageScroll } from '@/lib/utils';
-import type { Poem, MediaItem, StudyMaterial, Achievement, Certificate, Profile, SocialLink } from '@/lib/types';
+import { extractYouTubeId, getYouTubeThumbnail, resolveVideoSource } from '@/lib/media';
+import { DEFAULT_CHATBOT_FAQS, mergeChatbotFAQs } from '@/lib/chatbot';
+import type { Poem, MediaItem, StudyMaterial, Achievement, Certificate, Profile, SocialLink, CustomSection, ChatbotFAQ } from '@/lib/types';
 import { PUBLIC_SECTIONS, TOGGLEABLE_BLOCKS, type PublicSectionId } from '@/lib/sectionOrder';
 
-type AdminTab = 'poems' | 'media' | 'study' | 'achievements' | 'certificates' | 'guestbook' | 'profile' | 'settings' | 'section-order';
+type AdminTab = 'poems' | 'media' | 'study' | 'achievements' | 'certificates' | 'guestbook' | 'profile' | 'section-order' | 'sections' | 'chatbot' | 'settings';
 
 interface AdminPanelProps {
   open: boolean;
@@ -25,6 +27,8 @@ const TABS: { id: AdminTab; label: string; icon: string }[] = [
   { id: 'guestbook', label: 'Guestbook', icon: '💬' },
   { id: 'profile', label: 'Profile', icon: '👤' },
   { id: 'section-order', label: 'Section Order', icon: '↕' },
+  { id: 'sections', label: 'Section Builder', icon: '🧩' },
+  { id: 'chatbot', label: 'Chatbot Manager', icon: '🤖' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
@@ -141,6 +145,8 @@ export default function AdminPanel({ open, onClose, sectionOrder, onSectionOrder
                   onSocialsChange={(socials) => updateProfile({ ...data.profile, socials })}
                 />
               )}
+              {tab === 'sections' && <SectionBuilderAdmin />}
+              {tab === 'chatbot' && <ChatbotAdmin />}
               {tab === 'settings' && <SettingsAdmin />}
             </div>
           </div>
@@ -318,6 +324,471 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
   );
 }
 
+// === Section Builder ===
+const SECTION_TYPE_HELP: Record<CustomSection['type'], string> = {
+  text: 'Body copy. Supports ## headings, - bullets, > quotes, ``` code blocks, **bold** and *italic*.',
+  media: 'Renders the media URL below as an image, an embeddable video (YouTube/Vimeo), a direct video or audio file, or an external link card.',
+  widget: 'Paste a JSON array for a card grid, e.g. [{"label":"Projects","value":"27","description":"shipped"}]. Anything else falls back to text.',
+  game: 'Embeds a playable mini-game. No install, no assets, no cost.',
+};
+
+const EMPTY_SECTION: Omit<CustomSection, 'id'> = {
+  title: '',
+  type: 'text',
+  category: '',
+  content: '',
+  mediaUrl: '',
+  linkLabel: '',
+  game: 'tic-tac-toe',
+  isVisible: true,
+  createdAt: new Date().toISOString(),
+};
+
+function SectionBuilderAdmin() {
+  const { data, addCustomSection, updateCustomSection, deleteCustomSection, toggleCustomSectionVisible, moveCustomSection } = useData();
+  const { notify } = useToast();
+  const [editing, setEditing] = useState<CustomSection | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  const sections = data.customSections ?? [];
+
+  return (
+    <div>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-bold">Section Builder</h2>
+          <p className="text-sm text-white/40">
+            Create pages on the fly: text, media, widget cards or a playable mini-game.
+          </p>
+        </div>
+        <button
+          onClick={() => { sounds.click(); setEditing(null); setShowForm(true); }}
+          onMouseEnter={() => sounds.hover()}
+          className="btn-premium rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-800"
+        >
+          + New Section
+        </button>
+      </div>
+
+      {sections.length === 0 ? (
+        <div className="glass-card rounded-2xl p-10 text-center">
+          <p className="text-sm text-white/50">No custom sections yet.</p>
+          <p className="mt-1 text-xs text-white/35">
+            Create one and it appears on the public page, in the order shown here.
+          </p>
+        </div>
+      ) : (
+        <ol className="space-y-3">
+          {sections.map((section, index) => (
+            <li key={section.id} className={`glass-card rounded-2xl p-4 ${section.isVisible === false ? 'opacity-60' : ''}`}>
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 w-6 shrink-0 text-center text-xs font-mono text-white/35">{index + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{section.title}</p>
+                  <p className="truncate text-xs text-white/40">
+                    <span className="uppercase tracking-wider">{section.type}</span>
+                    {section.type === 'game' && ` · ${section.game === 'snake' ? 'Snake' : 'Tic-Tac-Toe'}`}
+                    {section.category && ` · ${section.category}`}
+                    {section.isVisible === false && <span className="ml-2 uppercase tracking-wider text-rose-300">Hidden</span>}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => { sounds.click(); toggleCustomSectionVisible(section.id); notify(section.isVisible === false ? 'Section is public again' : 'Section hidden from the public page', 'info'); }}
+                    aria-label={section.isVisible === false ? 'Show section publicly' : 'Hide section from public site'}
+                    title={section.isVisible === false ? 'Show publicly' : 'Hide from public site'}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/60 hover:text-cyan-700"
+                  >
+                    {section.isVisible === false ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { sounds.click(); moveCustomSection(section.id, -1); }}
+                    disabled={index === 0}
+                    aria-label={`Move ${section.title} up`}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/70 hover:text-cyan-700 disabled:cursor-not-allowed disabled:opacity-25"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { sounds.click(); moveCustomSection(section.id, 1); }}
+                    disabled={index === sections.length - 1}
+                    aria-label={`Move ${section.title} down`}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/70 hover:text-cyan-700 disabled:cursor-not-allowed disabled:opacity-25"
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { sounds.click(); setEditing(section); setShowForm(true); }}
+                    aria-label={`Edit ${section.title}`}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/60 hover:text-cyan-700"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { sounds.click(); deleteCustomSection(section.id); notify('Section deleted', 'info'); }}
+                    aria-label={`Delete ${section.title}`}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/60 hover:text-rose-500"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {showForm && (
+        <CustomSectionForm
+          section={editing}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSave={(form) => {
+            if (editing) {
+              updateCustomSection(editing.id, form);
+              notify('Section updated');
+            } else {
+              addCustomSection(form);
+              notify('Section added to the public page');
+            }
+            setShowForm(false);
+            setEditing(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CustomSectionForm({ section, onClose, onSave }: {
+  section: CustomSection | null;
+  onClose: () => void;
+  onSave: (form: Omit<CustomSection, 'id'>) => void;
+}) {
+  const { notify } = useToast();
+  const [form, setForm] = useState<Omit<CustomSection, 'id'>>(
+    section ? { ...section } : { ...EMPTY_SECTION, createdAt: new Date().toISOString() }
+  );
+
+  const update = <K extends keyof Omit<CustomSection, 'id'>>(key: K, value: Omit<CustomSection, 'id'>[K]) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  const usesMedia = form.type === 'media' || Boolean(form.linkLabel.trim());
+
+  return (
+    <ModalEditor title={section ? 'Edit Section' : 'New Section'} onClose={onClose}>
+      <div className="space-y-4">
+        <FormField label="Section Title">
+          <input value={form.title} onChange={(e) => update('title', e.target.value)} className={inputCls} placeholder="e.g. Play Break" />
+        </FormField>
+
+        <div className="grid grid-cols-2 gap-4">
+          <FormField label="Type">
+            <select value={form.type} onChange={(e) => update('type', e.target.value as CustomSection['type'])} className={inputCls}>
+              <option value="text">Text</option>
+              <option value="media">Media</option>
+              <option value="widget">Widget</option>
+              <option value="game">Mini-game</option>
+            </select>
+          </FormField>
+          <FormField label="Category (optional)">
+            <input value={form.category} onChange={(e) => update('category', e.target.value)} className={inputCls} placeholder="e.g. Playground" />
+          </FormField>
+        </div>
+
+        <p className="rounded-xl border border-slate-200 bg-white/70 px-3 py-2 text-xs text-slate-600">
+          {SECTION_TYPE_HELP[form.type]}
+        </p>
+
+        {form.type === 'game' && (
+          <FormField label="Game">
+            <select value={form.game} onChange={(e) => update('game', e.target.value as CustomSection['game'])} className={inputCls}>
+              <option value="tic-tac-toe">Tic-Tac-Toe</option>
+              <option value="snake">Snake</option>
+            </select>
+          </FormField>
+        )}
+
+        {usesMedia && (
+          <FormField label="Media URL">
+            <input value={form.mediaUrl} onChange={(e) => update('mediaUrl', e.target.value)} className={inputCls} placeholder="https://…" />
+          </FormField>
+        )}
+
+        {form.type !== 'game' && (
+          <FormField label="Content / Code payload">
+            <textarea
+              value={form.content}
+              onChange={(e) => update('content', e.target.value)}
+              className={`${inputCls} resize-y font-mono text-xs`}
+              rows={7}
+              placeholder={form.type === 'widget' ? '[{"label":"Projects","value":"27","description":"shipped"}]' : 'Write anything. ## for a heading, - for a bullet.'}
+            />
+          </FormField>
+        )}
+
+        {form.type !== 'game' && (
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Button label (optional)">
+              <input value={form.linkLabel} onChange={(e) => update('linkLabel', e.target.value)} className={inputCls} placeholder="e.g. Open project" />
+            </FormField>
+            <FormField label="Button link URL">
+              <input value={form.mediaUrl} onChange={(e) => update('mediaUrl', e.target.value)} className={inputCls} placeholder="https://…" />
+            </FormField>
+          </div>
+        )}
+
+        <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white/70 px-3 py-2.5 text-sm">
+          <input
+            type="checkbox"
+            checked={form.isVisible}
+            onChange={(e) => update('isVisible', e.target.checked)}
+            className="h-4 w-4 accent-cyan-700"
+          />
+          <span className="text-slate-700">Visible on the public page</span>
+        </label>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!form.title.trim()) { notify('A section title is required', 'error'); return; }
+              sounds.success();
+              onSave({ ...form, title: form.title.trim() });
+            }}
+            className="btn-premium flex-1 rounded-xl py-3 text-sm font-semibold text-slate-800"
+          >
+            {section ? 'Save Changes' : 'Create Section'}
+          </button>
+          <button type="button" onClick={onClose} className="rounded-xl glass px-5 py-3 text-sm text-white/60 hover:text-slate-900">Cancel</button>
+        </div>
+      </div>
+    </ModalEditor>
+  );
+}
+
+// === Chatbot Manager Admin ===
+/** A row in the manager: either a cloud override or an embedded default. */
+interface ManagerRow extends ChatbotFAQ {
+  managed: boolean;
+}
+
+function ChatbotAdmin() {
+  const { data, addChatbotFAQ, updateChatbotFAQ, deleteChatbotFAQ } = useData();
+  const { notify } = useToast();
+  const [editing, setEditing] = useState<ManagerRow | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  // Always safe: a missing/empty cloud list just means "nothing overridden yet".
+  const managed = data.chatbotFAQs ?? [];
+  const rows: ManagerRow[] = useMemo(() => mergeChatbotFAQs(managed).map((faq) => ({
+    ...faq,
+    managed: managed.some((item) => item.id === faq.id),
+  })), [managed]);
+
+  const save = (form: Omit<ChatbotFAQ, 'id'>, existing: ManagerRow | null) => {
+    if (existing?.managed) {
+      updateChatbotFAQ(existing.id, form);
+      notify('Answer updated — syncing to cloud');
+      return;
+    }
+    // Editing a built-in default writes an override into the cloud record; the
+    // default itself is never mutated, so "Restore" always works.
+    addChatbotFAQ(form);
+    notify(existing ? 'Default overridden in the cloud' : 'Answer added to the chatbot');
+  };
+
+  const importAllDefaults = () => {
+    const existing = new Set(managed.flatMap((faq) => faq.keywords));
+    const missing = DEFAULT_CHATBOT_FAQS.filter((faq) => !faq.keywords.some((keyword) => existing.has(keyword)));
+    if (missing.length === 0) {
+      notify('Every default is already in the cloud record', 'info');
+      return;
+    }
+    missing.forEach((faq) => addChatbotFAQ({
+      question: faq.keywords[0],
+      answer: faq.response,
+      keywords: [...faq.keywords],
+      enabled: true,
+    }));
+    notify(`Imported ${missing.length} default answer${missing.length > 1 ? 's' : ''} into the cloud`);
+  };
+
+  return (
+    <div>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-bold">Chatbot Manager</h2>
+          <p className="text-sm text-white/40">
+            Synced to JSONBin as <code className="font-mono text-xs">chatbotFAQs</code>. Keyword matching, zero API keys, zero cost.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => { sounds.click(); importAllDefaults(); }}
+            onMouseEnter={() => sounds.hover()}
+            className="rounded-xl glass px-4 py-2.5 text-sm font-semibold text-slate-700 hover:text-slate-900"
+          >
+            Import all defaults
+          </button>
+          <button
+            onClick={() => { sounds.click(); setEditing(null); setShowForm(true); }}
+            onMouseEnter={() => sounds.hover()}
+            className="btn-premium rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-800"
+          >
+            + New Answer
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {rows.map((faq) => (
+          <div key={faq.id} className={`glass-card rounded-2xl p-4 ${faq.enabled === false ? 'opacity-60' : ''}`}>
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                  <span className="truncate">{faq.question}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${
+                    faq.managed ? 'bg-cyan-500/10 text-cyan-700' : 'bg-slate-500/10 text-slate-500'
+                  }`}>
+                    {faq.managed ? 'custom' : 'default'}
+                  </span>
+                </p>
+                <p className="mt-1 line-clamp-2 text-xs text-white/50">{faq.answer}</p>
+                {faq.keywords.length > 0 && (
+                  <p className="mt-1.5 flex flex-wrap gap-1">
+                    {faq.keywords.map((keyword) => (
+                      <span key={keyword} className="rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-700">{keyword}</span>
+                    ))}
+                  </p>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {faq.managed ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { sounds.click(); updateChatbotFAQ(faq.id, { enabled: faq.enabled === false }); }}
+                      aria-label={faq.enabled === false ? 'Enable answer' : 'Disable answer'}
+                      title={faq.enabled === false ? 'Enable' : 'Disable'}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/60 hover:text-cyan-700"
+                    >
+                      {faq.enabled === false ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { sounds.click(); deleteChatbotFAQ(faq.id); notify('Answer removed', 'info'); }}
+                      aria-label={`Delete answer: ${faq.question}`}
+                      title="Delete"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/60 hover:text-rose-500"
+                    >
+                      ✕
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sounds.click();
+                      addChatbotFAQ({ question: faq.question, answer: faq.answer, keywords: [...faq.keywords], enabled: false });
+                      notify('Default dismissed for this site', 'info');
+                    }}
+                    aria-label={`Dismiss default: ${faq.question}`}
+                    title="Dismiss (stays in the app, hidden here)"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/60 hover:text-rose-500"
+                  >
+                    <EyeOff size={15} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { sounds.click(); setEditing(faq); setShowForm(true); }}
+                  aria-label={`${faq.managed ? 'Edit' : 'Override'}: ${faq.question}`}
+                  title={faq.managed ? 'Edit' : 'Override in the cloud'}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg glass text-white/60 hover:text-cyan-700"
+                >
+                  ✎
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <ChatbotForm
+          faq={editing}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSave={(form) => {
+            save(form, editing);
+            setShowForm(false);
+            setEditing(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ChatbotForm({ faq, onClose, onSave }: {
+  faq: ManagerRow | null;
+  onClose: () => void;
+  onSave: (form: Omit<ChatbotFAQ, 'id'>) => void;
+}) {
+  const { notify } = useToast();
+  const [question, setQuestion] = useState(faq?.question ?? '');
+  const [answer, setAnswer] = useState(faq?.answer ?? '');
+  const [keywords, setKeywords] = useState((faq?.keywords ?? []).join(', '));
+  const [enabled, setEnabled] = useState(faq?.enabled !== false);
+
+  const submit = () => {
+    if (!answer.trim()) { notify('A response is required', 'error'); return; }
+    const parsed = keywords.split(',').map((keyword) => keyword.trim().toLowerCase()).filter(Boolean);
+    // A label with no keyword would be dead weight in the matcher: fall back to it.
+    const triggers = parsed.length > 0 ? parsed : [question.trim().toLowerCase()].filter(Boolean);
+    if (triggers.length === 0) { notify('Add at least one keyword so the bot knows when to answer', 'error'); return; }
+    sounds.success();
+    onSave({ question: question.trim() || triggers[0], answer: answer.trim(), keywords: triggers, enabled });
+  };
+
+  return (
+    <ModalEditor title={faq?.managed ? 'Edit Answer' : faq ? 'Override Default' : 'New Answer'} onClose={onClose}>
+      <div className="space-y-4">
+        <FormField label="Label (what you see in this list)">
+          <input value={question} onChange={(e) => setQuestion(e.target.value)} className={inputCls} placeholder="e.g. Internships" />
+        </FormField>
+        <FormField label="Bot response">
+          <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className={`${inputCls} resize-y`} rows={5} placeholder="The exact line Mayank AI should reply with." />
+        </FormField>
+        <FormField label="Keywords (comma separated)">
+          <input value={keywords} onChange={(e) => setKeywords(e.target.value)} className={inputCls} placeholder="internship, intern, hiring" />
+        </FormField>
+        <p className="-mt-2 text-xs text-slate-500">
+          The bot answers with this response when the visitor's message contains a keyword. Longer keywords win, so specific ones should be listed first.
+        </p>
+        <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white/70 px-3 py-2.5 text-sm">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="h-4 w-4 accent-cyan-700" />
+          <span className="text-slate-700">Enabled</span>
+        </label>
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={submit}
+            className="btn-premium flex-1 rounded-xl py-3 text-sm font-semibold text-slate-800"
+          >
+            {faq?.managed ? 'Save Changes' : faq ? 'Save Override' : 'Add Answer'}
+          </button>
+          <button type="button" onClick={onClose} className="rounded-xl glass px-5 py-3 text-sm text-white/60 hover:text-slate-900">Cancel</button>
+        </div>
+      </div>
+    </ModalEditor>
+  );
+}
+
 // === Login ===
 function AdminLogin({ password, setPassword, onLogin, onClose }: {
   password: string; setPassword: (v: string) => void; onLogin: () => void; onClose: () => void;
@@ -435,6 +906,14 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
 }
 
 const inputCls = 'premium-input w-full rounded-xl px-4 py-2.5 text-sm';
+
+/** Tells the admin exactly how a pasted video URL will be rendered publicly. */
+function describeVideoSource(url: string) {
+  const source = resolveVideoSource(url);
+  if (source.kind === 'embed') return 'Plays inline in an embedded player.';
+  if (source.kind === 'file') return 'Direct video file — plays in the native HTML5 player.';
+  return 'This host cannot be embedded, so visitors see a link that opens in a new tab (no "Refused to connect" error).';
+}
 
 function ModalEditor({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
@@ -653,12 +1132,12 @@ function MediaForm({ item, onClose, onSave, blank }: {
 
   const update = (key: keyof Omit<MediaItem, 'id'>, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
-  // Auto-fill thumbnail from YouTube URL
+  // Auto-fill thumbnail from YouTube URL (any YouTube link shape works).
   const handleUrlChange = (url: string) => {
     update('url', url);
     if (form.type === 'video') {
-      const match = url.match(/(?:embed\/|watch\?v=|youtu\.be\/)([\w-]{11})/);
-      if (match) update('thumbnail', `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg`);
+      const videoId = extractYouTubeId(url);
+      if (videoId) update('thumbnail', getYouTubeThumbnail(videoId));
     } else if (form.type === 'photo' && !form.thumbnail) {
       update('thumbnail', url);
     }
@@ -685,6 +1164,9 @@ function MediaForm({ item, onClose, onSave, blank }: {
             placeholder={form.type === 'video' ? 'YouTube, MP4, or other video URL' : form.type === 'music' ? 'https://.../track.mp3' : 'https://...'}
           />
         </FormField>
+        {form.type === 'video' && form.url.trim() && (
+          <p className="-mt-2 text-xs text-slate-500">{describeVideoSource(form.url)}</p>
+        )}
         <FormField label={form.type === 'music' ? 'Cover Image URL (optional)' : 'Thumbnail URL'}>
           <input value={form.thumbnail} onChange={(e) => update('thumbnail', e.target.value)} className={inputCls} />
         </FormField>

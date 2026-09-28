@@ -250,4 +250,11 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
       date: '2025-09-10', avatar: 'S',
     },
   ],
+  // Runtime-built sections. Empty by default: an older cloud record simply has
+  // no `customSections` key, and `[]` is the safe fallback for it.
+  customSections: [],
+  // Admin-managed chatbot answers. Empty by default so the permanent embedded
+  // dataset in `chatbot.ts` is the source of truth until the admin edits
+  // something; the widget and the engine both fall back to it safely.
+  chatbotFAQs: [],
 };
