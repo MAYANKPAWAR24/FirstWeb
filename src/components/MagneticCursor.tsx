@@ -8,6 +8,7 @@ export default function MagneticCursor() {
   const pendingRef = useRef({ x: 0, y: 0 });
   const ringPosRef = useRef({ x: 0, y: 0 });
   const hoveringRef = useRef(false);
+  const initializedRef = useRef(false);
   const [enabled, setEnabled] = useState(true);
 
   // Allow user to disable cursor with Ctrl+Shift+C
@@ -40,8 +41,8 @@ export default function MagneticCursor() {
       rafRef.current = 0;
       return;
     }
-    ringPosRef.current.x += dx * 0.15;
-    ringPosRef.current.y += dy * 0.15;
+    ringPosRef.current.x += dx * 0.2;
+    ringPosRef.current.y += dy * 0.2;
     const ring = ringRef.current;
     if (ring) {
       ring.style.transform = `translate3d(${ringPosRef.current.x}px, ${ringPosRef.current.y}px, 0) translate(-50%, -50%)`;
@@ -62,12 +63,29 @@ export default function MagneticCursor() {
     pendingRef.current = { x: centerX, y: centerY };
     ringPosRef.current = { x: centerX, y: centerY };
 
+    // Immediately show cursor at center
+    if (dotRef.current) {
+      dotRef.current.style.transform = `translate3d(${centerX}px, ${centerY}px, 0) translate(-50%, -50%)`;
+      dotRef.current.style.opacity = '1';
+    }
+    if (ringRef.current) {
+      ringRef.current.style.transform = `translate3d(${centerX}px, ${centerY}px, 0) translate(-50%, -50%)`;
+      ringRef.current.style.opacity = '1';
+    }
+
     const onMove = (e: MouseEvent) => {
       pendingRef.current.x = e.clientX;
       pendingRef.current.y = e.clientY;
       const dot = dotRef.current;
       if (dot) {
         dot.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -50%)`;
+        dot.style.opacity = '1';
+      }
+      if (!initializedRef.current) {
+        initializedRef.current = true;
+        if (ringRef.current) {
+          ringRef.current.style.opacity = '1';
+        }
       }
       kick();
     };

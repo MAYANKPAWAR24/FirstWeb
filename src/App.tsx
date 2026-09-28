@@ -5,7 +5,7 @@ import { sounds, setSoundEnabled, isSoundEnabled } from '@/lib/sound';
 import type { SectionId } from '@/lib/types';
 import type { PortfolioSearchResult } from '@/lib/search';
 
-import MagneticCursor from '@/components/MagneticCursor';
+import PerformanceCursor from '@/components/PerformanceCursor';
 import ReadingProgress from '@/components/ReadingProgress';
 import Navigation from '@/components/Navigation';
 import Hero from '@/sections/Hero';
@@ -87,7 +87,7 @@ function AppContent() {
   return (
     <div className="premium-bg noise-overlay min-h-screen relative app-root gpu-accelerated">
       {/* Premium effects */}
-      <MagneticCursor />
+      <PerformanceCursor />
       <ReadingProgress />
 
       {/* Navigation */}
