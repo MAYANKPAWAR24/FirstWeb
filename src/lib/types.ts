@@ -101,3 +101,8 @@ export type SectionId =
   | 'study'
   | 'follow'
   | 'extra';
+
+/** Sub-sections that live inside a public section and can be toggled independently. */
+export type SubSectionId = 'achievements' | 'certificates' | 'guestbook' | 'contact' | 'visitors';
+
+export type ToggleableId = Exclude<SectionId, 'home'> | SubSectionId;

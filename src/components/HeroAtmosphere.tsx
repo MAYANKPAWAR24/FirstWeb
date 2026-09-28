@@ -20,7 +20,8 @@ export default function HeroAtmosphere() {
   useEffect(() => {
     const svg = svgRef.current;
     const section = svg?.closest('section');
-    if (!svg || !section || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!svg || !section || !window.matchMedia('(hover: hover) and (pointer: fine)').matches ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
     const context = gsap.context(() => {
       gsap.utils.toArray<SVGCircleElement>('[data-ambient-particle]', svg).forEach((particle, index) => {
@@ -41,9 +42,8 @@ export default function HeroAtmosphere() {
     const quickY = gsap.quickTo(svg, 'y', { duration: 1.1, ease: 'power3.out' });
     const onPointerMove = (event: PointerEvent) => {
       if (event.pointerType === 'touch') return;
-      const bounds = section.getBoundingClientRect();
-      quickX((event.clientX - bounds.left - bounds.width / 2) * 0.018);
-      quickY((event.clientY - bounds.top - bounds.height / 2) * 0.018);
+      quickX((event.clientX - window.innerWidth / 2) * 0.018);
+      quickY((event.clientY - window.innerHeight / 2) * 0.018);
     };
     const resetPointer = () => { quickX(0); quickY(0); };
 

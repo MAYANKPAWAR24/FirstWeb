@@ -21,13 +21,13 @@ export default function Hero({ profile, visitorCount, onNavigate }: HeroProps) {
   const [greeting] = useState(getGreeting);
 
   return (
-    <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden px-4 sm:px-6 pt-24 pb-16">
-      <div className="hero-depth hero-depth-back" data-parallax="0.12" aria-hidden="true">
+    <section id="home" className="relative min-h-screen flex items-center justify-center overflow-hidden px-4 sm:px-6 pt-24 pb-16 gpu-accelerated">
+      <div className="hero-depth hero-depth-back gpu-layer" data-parallax="0.12" aria-hidden="true">
         <span>MEGISTO</span>
       </div>
-      <div className="hero-depth hero-depth-front" data-parallax="0.24" aria-hidden="true" />
+      <div className="hero-depth hero-depth-front gpu-layer" data-parallax="0.24" aria-hidden="true" />
       <HeroAtmosphere />
-      <div className="max-w-5xl mx-auto text-center relative z-10">
+      <div className="max-w-5xl mx-auto text-center relative z-10 gpu-layer">
         {/* Greeting badge */}
         <div data-hero-enter className="hero-enter inline-flex items-center gap-2 px-4 py-2 rounded-full glass mb-8">
           <span className="w-2 h-2 rounded-full bg-emerald-400 pulse-glow" />

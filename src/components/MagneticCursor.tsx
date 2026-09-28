@@ -1,88 +1,97 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 /** Magnetic glowing cursor with trailing ring. Hidden on touch devices. */
 export default function MagneticCursor() {
   const dotRef = useRef<HTMLDivElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number>(0);
+  const pendingRef = useRef({ x: 0, y: 0 });
+  const ringPosRef = useRef({ x: 0, y: 0 });
+  const hoveringRef = useRef(false);
+
+  const setHover = useCallback((hovering: boolean) => {
+    if (hoveringRef.current === hovering) return;
+    hoveringRef.current = hovering;
+    document.body.classList.toggle('cursor-hover', hovering);
+  }, []);
+
+  const animate = useCallback(() => {
+    const dx = pendingRef.current.x - ringPosRef.current.x;
+    const dy = pendingRef.current.y - ringPosRef.current.y;
+    // Stop the rAF loop once the ring has converged on the pointer.
+    if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+      rafRef.current = 0;
+      return;
+    }
+    ringPosRef.current.x += dx * 0.2;
+    ringPosRef.current.y += dy * 0.2;
+    const ring = ringRef.current;
+    if (ring) {
+      ring.style.transform = `translate3d(${ringPosRef.current.x}px, ${ringPosRef.current.y}px, 0) translate(-50%, -50%)`;
+    }
+    rafRef.current = requestAnimationFrame(animate);
+  }, []);
+
+  const kick = useCallback(() => {
+    if (!rafRef.current) rafRef.current = requestAnimationFrame(animate);
+  }, [animate]);
 
   useEffect(() => {
-    if (window.matchMedia('(hover: none)').matches) return;
+    // Only for real pointing devices, and never when motion is reduced.
+    if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
-    let mouseX = 0, mouseY = 0;
-    let ringX = 0, ringY = 0;
-    let raf = 0;
+    const centerX = window.innerWidth / 2;
+    const centerY = window.innerHeight / 2;
+    pendingRef.current = { x: centerX, y: centerY };
+    ringPosRef.current = { x: centerX, y: centerY };
 
     const onMove = (e: MouseEvent) => {
-      mouseX = e.clientX;
-      mouseY = e.clientY;
-      if (dotRef.current) {
-        dotRef.current.style.left = `${mouseX}px`;
-        dotRef.current.style.top = `${mouseY}px`;
+      pendingRef.current.x = e.clientX;
+      pendingRef.current.y = e.clientY;
+      const dot = dotRef.current;
+      if (dot) {
+        dot.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -50%)`;
       }
+      kick();
     };
 
-    const onDown = () => {
-      document.body.classList.add('cursor-hover');
-    };
-    const onUp = () => {
-      document.body.classList.remove('cursor-hover');
-    };
+    const onDown = () => setHover(true);
+    const onUp = () => setHover(false);
 
-    const onEnterInteractive = () => document.body.classList.add('cursor-hover');
-    const onLeaveInteractive = () => document.body.classList.remove('cursor-hover');
-
-    const animate = () => {
-      ringX += (mouseX - ringX) * 0.15;
-      ringY += (mouseY - ringY) * 0.15;
-      if (ringRef.current) {
-        ringRef.current.style.left = `${ringX}px`;
-        ringRef.current.style.top = `${ringY}px`;
-      }
-      raf = requestAnimationFrame(animate);
+    // Delegate hover checks only to interactive controls, not every card.
+    const interactiveSelector = 'a, button, input, textarea, select, [data-cursor-hover]';
+    const onOver = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest(interactiveSelector)) setHover(true);
+    };
+    const onOut = (e: MouseEvent) => {
+      if (e.relatedTarget instanceof Element && e.relatedTarget.closest(interactiveSelector)) return;
+      if (e.target instanceof Element && e.target.closest(interactiveSelector)) setHover(false);
     };
 
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mousedown', onDown);
-    window.addEventListener('mouseup', onUp);
-
-    const interactiveSelector = 'a, button, .tilt-card, .glass-card, input, textarea, select, [data-cursor-hover]';
-    const els = document.querySelectorAll(interactiveSelector);
-    els.forEach((el) => {
-      el.addEventListener('mouseenter', onEnterInteractive);
-      el.addEventListener('mouseleave', onLeaveInteractive);
-    });
-
-    // Re-scan periodically for dynamically added elements
-    const observer = new MutationObserver(() => {
-      const newEls = document.querySelectorAll(interactiveSelector);
-      newEls.forEach((el) => {
-        el.removeEventListener('mouseenter', onEnterInteractive);
-        el.removeEventListener('mouseleave', onLeaveInteractive);
-        el.addEventListener('mouseenter', onEnterInteractive);
-        el.addEventListener('mouseleave', onLeaveInteractive);
-      });
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    raf = requestAnimationFrame(animate);
+    window.addEventListener('mousemove', onMove, { passive: true });
+    window.addEventListener('mousedown', onDown, { passive: true });
+    window.addEventListener('mouseup', onUp, { passive: true });
+    document.addEventListener('mouseover', onOver, { passive: true });
+    document.addEventListener('mouseout', onOut, { passive: true });
+    // The ring only needs animating while the pointer is actually moving.
+    kick();
 
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mousedown', onDown);
       window.removeEventListener('mouseup', onUp);
-      els.forEach((el) => {
-        el.removeEventListener('mouseenter', onEnterInteractive);
-        el.removeEventListener('mouseleave', onLeaveInteractive);
-      });
-      observer.disconnect();
-      cancelAnimationFrame(raf);
+      document.removeEventListener('mouseover', onOver);
+      document.removeEventListener('mouseout', onOut);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      document.body.classList.remove('cursor-hover');
     };
-  }, []);
+  }, [kick, setHover]);
 
   return (
     <>
-      <div ref={dotRef} className="cursor-dot hidden md:block" />
-      <div ref={ringRef} className="cursor-ring hidden md:block" />
+      <div ref={dotRef} className="cursor-dot hidden md:block gpu-layer" />
+      <div ref={ringRef} className="cursor-ring hidden md:block gpu-layer" />
     </>
   );
 }

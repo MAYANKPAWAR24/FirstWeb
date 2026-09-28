@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AtSign, BookOpen, GraduationCap, Image, Search, Sparkles, User, X, type LucideIcon } from 'lucide-react';
 import { sounds } from '@/lib/sound';
+import { useData } from '@/lib/DataContext';
 import type { PortfolioData, SectionId } from '@/lib/types';
 import { searchPortfolio, type PortfolioSearchResult } from '@/lib/search';
 
@@ -23,15 +24,34 @@ const NAV_ITEMS: { id: SectionId; label: string; icon: LucideIcon }[] = [
 ];
 
 export default function Navigation({ onNavigate, data, onSearchSelect, activeSection, soundOn, onToggleSound }: NavProps) {
+  const { sectionVisibility } = useData();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [resultsOpen, setResultsOpen] = useState(false);
-  const results = useMemo(() => searchPortfolio(query, data), [query, data]);
+  const results = useMemo(() => searchPortfolio(query, data).filter((result) =>
+    (result.sectionId === 'home' || sectionVisibility[result.sectionId] !== true) &&
+    (result.kind !== 'achievement' || sectionVisibility.achievements !== true)
+  ), [query, data, sectionVisibility]);
+
+  // Hidden sections must not remain reachable from the nav.
+  const navItems = useMemo(
+    () => NAV_ITEMS.filter((item) => item.id === 'home' || sectionVisibility[item.id] !== true),
+    [sectionVisibility]
+  );
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40);
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        setScrolled(window.scrollY > 40);
+        ticking = false;
+      });
+    };
     window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
@@ -59,7 +79,7 @@ export default function Navigation({ onNavigate, data, onSearchSelect, activeSec
 
             {/* Desktop nav */}
             <div className="hidden lg:flex items-center gap-1">
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <button
@@ -165,7 +185,7 @@ export default function Navigation({ onNavigate, data, onSearchSelect, activeSec
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
           <div className="relative pt-24 px-4 animate-slide-right">
             <div className="glass-strong rounded-2xl p-4 space-y-1">
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
                   <button

@@ -25,18 +25,55 @@
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 90px;
+  /* Let iOS/Android keep momentum scrolling and avoid rubber-band jank. */
+  -webkit-text-size-adjust: 100%;
+  -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
 }
 
 body {
   font-family: 'Inter', 'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', sans-serif;
   background: #f5f5f7;
   color: var(--off-white);
-  overflow-x: clip;
-  cursor: none;
+  overflow-x: hidden;
+  cursor: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* GPU acceleration for smooth scrolling */
+  transform: translateZ(0);
+  will-change: scroll-position;
 }
 
-@media (max-width: 768px) {
+/* Applied by lockPageScroll() — overflow-based lock, never position:fixed. */
+body.scroll-locked {
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+/* Consistent vertical rhythm with much tighter spacing on phones, which is
+   what previously produced the large, awkward empty gaps between sections. */
+.section-shell {
+  position: relative;
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+@media (min-width: 640px) {
+  .section-shell { padding-top: 2.5rem; padding-bottom: 2.5rem; }
+}
+
+@media (min-width: 1024px) {
+  .section-shell { padding-top: 4rem; padding-bottom: 4rem; }
+}
+
+@media (hover: none), (pointer: coarse) {
   body { cursor: auto; }
+  .cursor-dot, .cursor-ring { display: none; }
+  /* Disable heavy effects on touch devices for performance */
+  .hero-atmosphere { display: none; }
+  .aurora-orb { display: none; }
 }
 
 .font-display {
@@ -92,22 +129,18 @@ body {
 /* === Glassmorphism === */
 .glass {
   background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   border: 1px solid rgba(255, 255, 255, 0.72);
   box-shadow: 0 2px 10px rgba(29, 29, 31, 0.045);
-  transform: translate3d(0, 0, 0);
-  -webkit-backface-visibility: hidden;
 }
 
 .glass-strong {
   background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(18px) saturate(145%);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.9);
   box-shadow: 0 12px 36px rgba(29, 29, 31, 0.1);
-  transform: translate3d(0, 0, 0);
-  -webkit-backface-visibility: hidden;
 }
 
 .glass-card {
@@ -146,27 +179,37 @@ body {
 /* === Magnetic Cursor === */
 .cursor-dot {
   position: fixed;
+  top: 0;
+  left: 0;
   width: 8px;
   height: 8px;
   background: var(--cyan-accent);
   border-radius: 50%;
   pointer-events: none;
   z-index: 99999;
-  transform: translate(-50%, -50%);
+  transform: translate3d(-50%, -50%, 0);
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   transition: width 0.2s, height 0.2s, background 0.2s;
   box-shadow: 0 0 12px rgba(34, 211, 238, 0.6);
 }
 
 .cursor-ring {
   position: fixed;
+  top: 0;
+  left: 0;
   width: 40px;
   height: 40px;
   border: 1.5px solid rgba(34, 211, 238, 0.4);
   border-radius: 50%;
   pointer-events: none;
   z-index: 99998;
-  transform: translate(-50%, -50%);
-  transition: width 0.3s, height 0.3s, border-color 0.3s, transform 0.12s ease-out;
+  transform: translate3d(-50%, -50%, 0);
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transition: width 0.3s, height 0.3s, border-color 0.3s;
 }
 
 .cursor-hover .cursor-dot {
@@ -231,12 +274,18 @@ body {
 .spin-slow { animation: spin-slow 8s linear infinite; }
 
 /* === Reveal on scroll === */
-.reveal {
+/* === Reveal on scroll ===
+   Content is hidden only once <html> carries .reveal-ready, which the
+   useScrollReveal hook adds. If JS is disabled, blocked, or the GSAP setup
+   throws, the class is never added and every section remains visible. */
+.reveal-ready .reveal,
+.reveal-ready .hero-enter {
   opacity: 0;
-  will-change: transform, opacity;
 }
-.hero-enter {
-  opacity: 0;
+.no-motion .reveal,
+.no-motion .hero-enter {
+  opacity: 1;
+  transform: none;
 }
 
 .hero-depth {
@@ -244,7 +293,6 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  will-change: transform;
 }
 .hero-depth-back {
   background:
@@ -276,7 +324,6 @@ body {
   z-index: 1;
   overflow: visible;
   pointer-events: none;
-  will-change: transform;
 }
 .hero-atmosphere-trace {
   fill: none;
@@ -291,7 +338,6 @@ body {
 .hero-particle {
   fill: rgba(103, 232, 249, 0.46);
   filter: drop-shadow(0 0 5px rgba(103, 232, 249, 0.5));
-  will-change: transform;
 }
 .hero-particle-bright {
   fill: rgba(255, 255, 255, 0.7);
@@ -302,7 +348,6 @@ body {
 }
 .literature-deck-surface {
   transition: border-color 0.4s ease, box-shadow 0.4s ease;
-  will-change: transform;
 }
 .literature-copy {
   font-family: 'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', 'Kohinoor Devanagari', sans-serif;
@@ -314,6 +359,88 @@ body {
   font-synthesis: none;
 }
 
+/* === GPU Hardware Acceleration Utilities === */
+.gpu-accelerated {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform, opacity;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  -webkit-perspective: 1000;
+  perspective: 1000;
+}
+
+/* Force GPU layer for smooth animations */
+.gpu-layer {
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+}
+
+/* iOS Safari specific fixes */
+@supports (-webkit-touch-callout: none) {
+  /* iOS Safari: drop backdrop-filter entirely (it forces expensive, janky
+     compositing) and keep only the GPU-promoting transform. */
+  .glass,
+  .glass-strong {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  .reveal,
+  .hero-enter {
+    opacity: 1;
+  }
+
+  .hero-depth,
+  .hero-atmosphere {
+    will-change: auto;
+  }
+
+  .hero-atmosphere {
+    display: none;
+  }
+
+  /* Disable fixed positioning issues on iOS */
+  .fixed,
+  [style*="position: fixed"] {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+  }
+
+  /* Smooth scrolling for iOS */
+  .ios-scroll {
+    -webkit-overflow-scrolling: touch;
+    overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 1023px) {
+  .glass,
+  .glass-strong,
+  nav .glass,
+  nav .glass-strong {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.94);
+  }
+
+  /* Reduce animation complexity on mobile */
+  .reveal,
+  .hero-enter {
+    will-change: auto;
+  }
+
+  /* Disable parallax on mobile */
+  [data-parallax] {
+    transform: none !important;
+    will-change: auto !important;
+  }
+}
+
+/* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after {
@@ -324,6 +451,8 @@ body {
   }
   .reveal, .hero-enter { opacity: 1; transform: none; }
   .hero-atmosphere { display: none; }
+  .aurora-orb { display: none; }
+  .gpu-accelerated { will-change: auto; }
 }
 
 /* === 3D Tilt === */
@@ -331,6 +460,8 @@ body {
   transform-style: preserve-3d;
   transition: transform 0.2s ease-out;
   will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 /* === Skill Pills === */
@@ -374,9 +505,14 @@ body {
   position: fixed;
   top: 0; left: 0;
   height: 3px;
+  width: 100%;
   background: linear-gradient(90deg, #22d3ee, #a78bfa, #fb7185);
   z-index: 10000;
-  transition: width 0.1s;
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
 }
 
@@ -442,24 +578,43 @@ body {
 .ios-scroll {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  transform: translate3d(0, 0, 0);
-  -webkit-backface-visibility: hidden;
 }
 
 nav {
   transform: translate3d(0, 0, 0);
   -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: auto;
+  /* Never let the fixed nav overlap the reading progress bar. */
+  max-height: 100vh;
+}
+
+/* Keep the fixed nav and its backdrop-filter layer from fighting the scroll
+   compositor on mobile, which produced visible jitter/tearing. */
+@media (max-width: 1023px) {
+  .glass,
+  .glass-strong,
+  nav .glass,
+  nav .glass-strong {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.94);
+  }
 }
 
 @supports (-webkit-touch-callout: none) {
+  /* iOS Safari: drop backdrop-filter entirely (it forces expensive, janky
+     compositing) and keep only the GPU-promoting transform. */
   .glass,
   .glass-strong {
-    -webkit-backdrop-filter: blur(10px) saturate(125%);
-    backdrop-filter: blur(10px) saturate(125%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(255, 255, 255, 0.96);
   }
 
-  .reveal {
-    will-change: auto;
+  .reveal,
+  .hero-enter {
+    opacity: 1;
   }
 
   .hero-depth,
@@ -470,6 +625,10 @@ nav {
   .hero-atmosphere {
     display: none;
   }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  body { cursor: none; }
 }
 
 /* Inputs */

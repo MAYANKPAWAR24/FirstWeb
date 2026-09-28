@@ -8,10 +8,10 @@ interface ProfileSectionProps {
 
 export default function ProfileSection({ profile }: ProfileSectionProps) {
   return (
-    <section id="profile" className="relative py-24 px-4 sm:px-6">
+    <section id="profile" className="section-shell px-4 sm:px-6 gpu-accelerated">
       <div className="max-w-6xl mx-auto">
         {/* Section header */}
-        <div className="text-center mb-16 reveal">
+        <div className="text-center mb-16 reveal gpu-layer">
           <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Who I Am</p>
           <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Profile</h2>
           <div className="heading-line mx-auto" />

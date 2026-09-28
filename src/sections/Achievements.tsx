@@ -38,10 +38,10 @@ export default function Achievements({ achievements, searchTarget }: Achievement
   const sorted = [...achievements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
-    <section id="achievements" className="relative py-24 px-4 sm:px-6">
+    <section id="achievements" className="section-shell px-4 sm:px-6 gpu-accelerated">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-16 reveal">
+        <div className="text-center mb-16 reveal gpu-layer">
           <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Milestones</p>
           <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Achievements</h2>
           <div className="heading-line mx-auto mb-6" />

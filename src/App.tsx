@@ -1,15 +1,13 @@
-import { Fragment, useEffect, useState, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useState, useCallback, useMemo } from 'react';
 import { DataProvider, useData } from '@/lib/DataContext';
 import { ToastProvider, useToast } from '@/lib/ToastContext';
 import { sounds, setSoundEnabled, isSoundEnabled } from '@/lib/sound';
-import { useScrollReveal } from '@/hooks/useScrollReveal';
 import type { SectionId } from '@/lib/types';
 import type { PortfolioSearchResult } from '@/lib/search';
 
 import MagneticCursor from '@/components/MagneticCursor';
 import ReadingProgress from '@/components/ReadingProgress';
 import Navigation from '@/components/Navigation';
-import AdminPanel from '@/components/AdminPanel';
 import Hero from '@/sections/Hero';
 import ProfileSection from '@/sections/Profile';
 import Literature from '@/sections/Literature';
@@ -18,38 +16,41 @@ import StudyMaterialSection from '@/sections/StudyMaterial';
 import FollowMe from '@/sections/FollowMe';
 import Extra from '@/sections/Extra';
 
-function AppContent() {
-  const { data, sectionOrder, updateSectionOrder } = useData();
-  const { notify } = useToast();
-  useScrollReveal();
+// The admin dashboard is heavy and never needed on first paint.
+const AdminPanel = lazy(() => import('@/components/AdminPanel'));
 
-  const [loading, setLoading] = useState(true);
+function AppContent() {
+  const { data, sectionOrder, isSectionVisible, updateSectionOrder } = useData();
+  const { notify } = useToast();
+
   const [adminOpen, setAdminOpen] = useState(false);
   const [soundOn, setSoundOn] = useState(isSoundEnabled());
   const [activeSection, setActiveSection] = useState<SectionId>('home');
   const [searchSelection, setSearchSelection] = useState<PortfolioSearchResult | null>(null);
 
-  const sectionRenderers = {
+  // Sections hidden by the admin are dropped from the public render entirely.
+  const visibleSectionOrder = useMemo(
+    () => sectionOrder.filter((id) => isSectionVisible(id)),
+    [sectionOrder, isSectionVisible]
+  );
+
+  const sectionRenderers: Partial<Record<SectionId, () => JSX.Element>> = {
     profile: () => <ProfileSection profile={data.profile} />,
     literature: () => <Literature poems={data.poems} searchTarget={searchSelection?.kind === 'literature' ? searchSelection.id : null} />,
     media: () => <Media items={data.media} searchTarget={searchSelection?.kind === 'media' ? searchSelection.id : null} />,
     study: () => <StudyMaterialSection materials={data.studyMaterials} searchTarget={searchSelection?.kind === 'study' ? searchSelection.id : null} />,
     follow: () => <FollowMe socials={data.profile.socials} />,
-    extra: () => <Extra searchTarget={searchSelection?.kind === 'achievement' ? searchSelection.id : null} />,
+    extra: () => (
+      <Extra
+        searchTarget={searchSelection?.kind === 'achievement' ? searchSelection.id : null}
+        showAchievements={isSectionVisible('achievements')}
+      />
+    ),
   };
-
-  // Loading screen
-  useEffect(() => {
-    const t = setTimeout(() => {
-      setLoading(false);
-      sounds.success();
-    }, 1800);
-    return () => clearTimeout(t);
-  }, []);
 
   // Active section tracking via IntersectionObserver
   useEffect(() => {
-    const sections: SectionId[] = ['home', ...sectionOrder];
+    const sections: SectionId[] = ['home', ...visibleSectionOrder];
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -65,13 +66,13 @@ function AppContent() {
       if (el) observer.observe(el);
     });
     return () => observer.disconnect();
-  }, [loading, sectionOrder]);
+  }, [visibleSectionOrder]);
 
   const handleNavigate = useCallback((id: SectionId) => {
     const el = document.getElementById(id);
     if (el) {
       const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - 90);
-      window.scrollTo({ top, behavior: 'instant' });
+      window.scrollTo({ top, behavior: 'auto' });
     }
   }, []);
 
@@ -83,17 +84,8 @@ function AppContent() {
     notify(next ? 'Sound effects enabled' : 'Sound effects muted', 'info');
   }, [soundOn, notify]);
 
-  if (loading) {
-    return <LoadingScreen />;
-  }
-
   return (
-    <div className="premium-bg noise-overlay min-h-screen relative">
-      {/* Aurora orbs */}
-      <div className="aurora-orb aurora-1" />
-      <div className="aurora-orb aurora-2" />
-      <div className="aurora-orb aurora-3" />
-
+    <div className="premium-bg noise-overlay min-h-screen relative app-root gpu-accelerated">
       {/* Premium effects */}
       <MagneticCursor />
       <ReadingProgress />
@@ -112,14 +104,15 @@ function AppContent() {
       />
 
       {/* Main content */}
-      <main className="relative z-10">
+      <main className="relative z-10 gpu-layer">
         <Hero profile={data.profile} visitorCount={data.visitorCount} onNavigate={handleNavigate} />
-        {sectionOrder.map((id) => (
-          <Fragment key={id}>{sectionRenderers[id]()}</Fragment>
-        ))}
+        {visibleSectionOrder.map((id) => {
+          const render = sectionRenderers[id];
+          return render ? render() : null;
+        })}
       </main>
 
-      <footer className="relative z-10 flex justify-center py-5">
+      <footer className="relative z-10 flex justify-center py-5 gpu-layer">
         <button
           type="button"
           onClick={() => setAdminOpen(true)}
@@ -132,25 +125,16 @@ function AppContent() {
       </footer>
 
       {/* Overlays */}
-      <AdminPanel
-        open={adminOpen}
-        onClose={() => setAdminOpen(false)}
-        sectionOrder={sectionOrder}
-        onSectionOrderChange={updateSectionOrder}
-      />
-    </div>
-  );
-}
-
-function LoadingScreen() {
-  return (
-    <div className="fixed inset-0 z-[99999] premium-bg flex flex-col items-center justify-center">
-      <div className="aurora-orb aurora-1" />
-      <div className="relative z-10 flex flex-col items-center">
-        <div className="loader-orbit mb-6" />
-        <div className="font-display text-xl font-bold gradient-text mb-2 animate-fade-in">Loading Portfolio</div>
-        <div className="text-xs text-white/40">Preparing something beautiful...</div>
-      </div>
+      {adminOpen && (
+        <Suspense fallback={<div className="fixed inset-0 z-[9500] premium-bg gpu-accelerated" aria-hidden="true" />}>
+          <AdminPanel
+            open={adminOpen}
+            onClose={() => setAdminOpen(false)}
+            sectionOrder={sectionOrder}
+            onSectionOrderChange={updateSectionOrder}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

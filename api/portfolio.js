@@ -9,6 +9,10 @@ import {
 const SESSION_COOKIE = 'portfolio_admin_session';
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const DEFAULT_SECTION_ORDER = ['profile', 'literature', 'media', 'study', 'extra', 'follow'];
+const TOGGLEABLE_BLOCKS = [
+  'profile', 'literature', 'media', 'study', 'extra', 'follow',
+  'achievements', 'certificates', 'guestbook', 'contact', 'visitors',
+];
 
 function send(res, status, body) {
   res.status(status).json(body);
@@ -76,10 +80,11 @@ async function writeRecord(record) {
 }
 
 function publicSnapshot(record, isAdmin) {
-  const { __adminAuth, adminPassword, sectionOrder, ...data } = record;
+  const { __adminAuth, adminPassword, sectionOrder, sectionVisibility, ...data } = record;
   return {
     data,
     sectionOrder: Array.isArray(sectionOrder) ? sectionOrder : DEFAULT_SECTION_ORDER,
+    sectionVisibility: validVisibility(sectionVisibility),
     isAdmin,
   };
 }
@@ -108,6 +113,15 @@ function validOrder(order) {
   if (!Array.isArray(order)) return DEFAULT_SECTION_ORDER;
   const unique = [...new Set(order.filter((id) => DEFAULT_SECTION_ORDER.includes(id)))];
   return [...unique, ...DEFAULT_SECTION_ORDER.filter((id) => !unique.includes(id))];
+}
+
+function validVisibility(visibility) {
+  if (!visibility || typeof visibility !== 'object' || Array.isArray(visibility)) return {};
+  const normalized = {};
+  Object.entries(visibility).forEach(([id, hidden]) => {
+    if (TOGGLEABLE_BLOCKS.includes(id) && hidden === true) normalized[id] = true;
+  });
+  return normalized;
 }
 
 export default async function handler(req, res) {
@@ -173,7 +187,7 @@ export default async function handler(req, res) {
           message,
           date: new Date().toISOString(),
           avatar: name.charAt(0).toUpperCase(),
-          approved: false,
+          approved: true,
         };
         record.guestbook = [savedEntry, ...(Array.isArray(record.guestbook) ? record.guestbook : [])];
         await writeRecord(record);
@@ -201,6 +215,7 @@ export default async function handler(req, res) {
       const record = {
         ...data,
         sectionOrder: validOrder(body.sectionOrder),
+        sectionVisibility: validVisibility(body.sectionVisibility),
         ...(previous.__adminAuth ? { __adminAuth: previous.__adminAuth } : {}),
       };
       await writeRecord(record);

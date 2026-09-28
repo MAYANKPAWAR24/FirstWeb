@@ -1,9 +1,10 @@
 import type { PortfolioData } from './types';
-import type { PublicSectionId } from './sectionOrder';
+import type { PublicSectionId, SectionVisibility } from './sectionOrder';
 
 export interface CloudSnapshot {
   data: Partial<PortfolioData>;
   sectionOrder: PublicSectionId[];
+  sectionVisibility: SectionVisibility;
   isAdmin: boolean;
 }
 
@@ -24,8 +25,8 @@ export function fetchCloudSnapshot() {
   return request<CloudSnapshot>({ method: 'GET' });
 }
 
-export function saveCloudSnapshot(data: PortfolioData, sectionOrder: PublicSectionId[]) {
-  const save = () => request<{ ok: true }>({ method: 'PUT', body: JSON.stringify({ data, sectionOrder }) });
+export function saveCloudSnapshot(data: PortfolioData, sectionOrder: PublicSectionId[], sectionVisibility: SectionVisibility) {
+  const save = () => request<{ ok: true }>({ method: 'PUT', body: JSON.stringify({ data, sectionOrder, sectionVisibility }) });
   const queuedSave = saveQueue.then(save, save);
   saveQueue = queuedSave.catch(() => undefined);
   return queuedSave;

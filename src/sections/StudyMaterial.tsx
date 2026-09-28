@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { sounds } from '@/lib/sound';
 import { useToast } from '@/lib/ToastContext';
+import { useResponsiveItemLimit } from '@/hooks/useResponsiveItemLimit';
 import { formatDate } from '@/lib/utils';
 import type { StudyMaterial } from '@/lib/types';
 
@@ -29,16 +30,28 @@ const FILE_COLORS: Record<string, string> = {
 
 export default function StudyMaterialSection({ materials, searchTarget }: StudyProps) {
   const { notify } = useToast();
+  const [showAll, setShowAll] = useState(false);
+  const itemLimit = useResponsiveItemLimit();
 
   useEffect(() => {
     if (!searchTarget) return;
+    setShowAll(true);
+  }, [searchTarget]);
+
+  const visibleMaterials = useMemo(
+    () => materials.filter((material) => material.visible !== false),
+    [materials]
+  );
+  const displayed = visibleMaterials.slice(0, showAll ? visibleMaterials.length : itemLimit);
+  const hasOverflow = visibleMaterials.length > itemLimit;
+
+  useEffect(() => {
+    if (!searchTarget || !showAll) return;
     const frame = requestAnimationFrame(() => {
       document.getElementById(`search-target-study-${searchTarget}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [searchTarget]);
-
-  const visibleMaterials = materials.filter((material) => material.visible !== false);
+  }, [searchTarget, showAll, displayed.length]);
 
   const handleDownload = (sm: StudyMaterial) => {
     sounds.click();
@@ -50,10 +63,10 @@ export default function StudyMaterialSection({ materials, searchTarget }: StudyP
   };
 
   return (
-    <section id="study" className="relative py-24 px-4 sm:px-6">
+    <section id="study" className="section-shell px-4 sm:px-6 gpu-accelerated">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-12 reveal">
+        <div className="text-center mb-12 reveal gpu-layer">
           <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Learn & Grow</p>
           <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Study Material</h2>
           <div className="heading-line mx-auto mb-6" />
@@ -65,7 +78,7 @@ export default function StudyMaterialSection({ materials, searchTarget }: StudyP
           <div className="text-center py-20 text-white/40 text-sm">No study materials available yet.</div>
         ) : (
           <div className="grid sm:grid-cols-2 gap-5">
-            {visibleMaterials.map((sm, i) => (
+            {displayed.map((sm, i) => (
               <div
                 key={sm.id}
                 id={`search-target-study-${sm.id}`}
@@ -111,6 +124,17 @@ export default function StudyMaterialSection({ materials, searchTarget }: StudyP
                 </div>
               </div>
             ))}
+          </div>
+        )}
+        {hasOverflow && (
+          <div className="mt-8 flex justify-center">
+            <button
+              type="button"
+              onClick={() => { sounds.click(); setShowAll((current) => !current); }}
+              className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800"
+            >
+              {showAll ? 'SHOW LESS' : 'SEE ALL'}
+            </button>
           </div>
         )}
       </div>

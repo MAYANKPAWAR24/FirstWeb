@@ -5,7 +5,7 @@ import { useToast } from '@/lib/ToastContext';
 import { sounds } from '@/lib/sound';
 import { formatDate, lockPageScroll } from '@/lib/utils';
 import type { Poem, MediaItem, StudyMaterial, Achievement, Certificate, Profile, SocialLink } from '@/lib/types';
-import { PUBLIC_SECTIONS, type PublicSectionId } from '@/lib/sectionOrder';
+import { PUBLIC_SECTIONS, TOGGLEABLE_BLOCKS, type PublicSectionId } from '@/lib/sectionOrder';
 
 type AdminTab = 'poems' | 'media' | 'study' | 'achievements' | 'certificates' | 'guestbook' | 'profile' | 'settings' | 'section-order';
 
@@ -156,6 +156,8 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
   socials: SocialLink[];
   onSocialsChange: (socials: SocialLink[]) => void;
 }) {
+  const { sectionVisibility, toggleSectionVisible } = useData();
+  const { notify } = useToast();
   const [newSocial, setNewSocial] = useState({ label: '', url: '' });
 
   const moveSection = (index: number, offset: -1 | 1) => {
@@ -165,6 +167,12 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
     [next[index], next[target]] = [next[target], next[index]];
     onChange(next);
     sounds.click();
+  };
+
+  const flipVisibility = (id: (typeof TOGGLEABLE_BLOCKS)[number]['id'], label: string) => {
+    sounds.click();
+    toggleSectionVisible(id);
+    notify(sectionVisibility[id] === true ? `${label} is now hidden` : `${label} is now visible`, 'info');
   };
 
   const addSocial = () => {
@@ -181,18 +189,33 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
     <div className="max-w-2xl">
       <div className="mb-6">
         <h2 className="font-display text-2xl font-bold">Section Management / Order</h2>
-        <p className="text-sm text-white/40">Changes sync to the portfolio cloud record and public page.</p>
+        <p className="text-sm text-white/40">Reorder sections, or hide them entirely from the public page. Changes sync to the cloud record.</p>
       </div>
       <ol className="space-y-2">
-        {order.map((id, index) => (
-          <li key={id} className="glass-card flex items-center gap-3 rounded-xl p-3 sm:p-4">
+        {order.map((id, index) => {
+          const label = labels.get(id) ?? id;
+          const hidden = sectionVisibility[id] === true;
+          return (
+          <li key={id} className={`glass-card flex items-center gap-3 rounded-xl p-3 sm:p-4 ${hidden ? 'opacity-60' : ''}`}>
             <span className="w-7 text-center text-xs font-mono text-white/35">{index + 1}</span>
-            <span className="min-w-0 flex-1 text-sm font-medium">{labels.get(id) ?? id}</span>
+            <span className="min-w-0 flex-1 text-sm font-medium">
+              {label}
+              {hidden && <span className="ml-2 text-[10px] uppercase tracking-wider text-rose-300">Hidden</span>}
+            </span>
+            <button
+              type="button"
+              onClick={() => flipVisibility(id, label)}
+              aria-label={hidden ? `Unhide ${label} on the public site` : `Hide ${label} from the public site`}
+              title={hidden ? 'Show on public site' : 'Hide from public site'}
+              className="flex h-9 w-9 items-center justify-center rounded-lg glass text-white/70 transition-colors hover:text-cyan-300"
+            >
+              {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+            </button>
             <button
               type="button"
               onClick={() => moveSection(index, -1)}
               disabled={index === 0}
-              aria-label={`Move ${labels.get(id) ?? id} up`}
+              aria-label={`Move ${label} up`}
               className="w-9 h-9 rounded-lg glass text-white/70 transition-colors hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-25"
             >
               ↑
@@ -201,14 +224,49 @@ function SectionOrderAdmin({ order, onChange, socials, onSocialsChange }: {
               type="button"
               onClick={() => moveSection(index, 1)}
               disabled={index === order.length - 1}
-              aria-label={`Move ${labels.get(id) ?? id} down`}
+              aria-label={`Move ${label} down`}
               className="w-9 h-9 rounded-lg glass text-white/70 transition-colors hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-25"
             >
               ↓
             </button>
           </li>
-        ))}
+          );
+        })}
       </ol>
+
+      <div className="glass-card mt-8 rounded-2xl p-4 sm:p-5">
+        <div className="mb-4">
+          <h3 className="font-display text-lg font-semibold">Show / Hide Blocks</h3>
+          <p className="mt-1 text-sm text-white/40">Hide individual blocks inside a section without removing its content. Hidden content stays safe in the cloud backend.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {TOGGLEABLE_BLOCKS.map((block) => {
+            const hidden = sectionVisibility[block.id] === true;
+            return (
+              <button
+                key={block.id}
+                type="button"
+                onClick={() => flipVisibility(block.id, block.label)}
+                aria-pressed={!hidden}
+                className={`flex items-center justify-between gap-3 rounded-xl border p-3 text-left text-sm transition-colors ${
+                  hidden
+                    ? 'border-rose-300/40 bg-rose-50 text-rose-700'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-cyan-400/50'
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className="block font-medium">{block.label}</span>
+                  <span className="block text-[11px] uppercase tracking-wider text-slate-500">{block.group}</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold">
+                  {hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+                  {hidden ? 'Hidden' : 'Visible'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="glass-card mt-8 rounded-2xl p-4 sm:p-5">
         <div className="mb-4">
@@ -380,9 +438,9 @@ const inputCls = 'premium-input w-full rounded-xl px-4 py-2.5 text-sm';
 
 function ModalEditor({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-[9600] flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
-        <div className="ios-scroll relative w-full max-w-lg max-h-[85dvh] overflow-y-auto glass-strong rounded-3xl p-6 animate-scale-in" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[9600] flex items-center justify-center p-4 animate-fade-in gpu-accelerated" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-md gpu-layer" />
+        <div className="ios-scroll relative w-full max-w-lg max-h-[85dvh] overflow-y-auto glass-strong rounded-3xl p-6 animate-scale-in gpu-layer" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="font-display text-xl font-bold">{title}</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-lg glass flex items-center justify-center text-white/60 hover:text-rose-300">✕</button>
@@ -1170,7 +1228,7 @@ function CertificatesAdmin() {
 
 // === Settings Admin ===
 function SettingsAdmin() {
-  const { data, sectionOrder, setAdminPassword, resetData } = useData();
+  const { data, sectionOrder, sectionVisibility, setAdminPassword, resetData } = useData();
   const { notify } = useToast();
   const [newPw, setNewPw] = useState('');
   const [confirmPw, setConfirmPw] = useState('');
@@ -1216,7 +1274,7 @@ function SettingsAdmin() {
             <button
               onClick={() => {
                 sounds.click();
-                const blob = new Blob([JSON.stringify({ ...data, sectionOrder }, null, 2)], { type: 'application/json' });
+                const blob = new Blob([JSON.stringify({ ...data, sectionOrder, sectionVisibility }, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url; a.download = 'portfolio-backup.json'; a.click();

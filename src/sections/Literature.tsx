@@ -3,6 +3,7 @@ import { gsap } from 'gsap';
 import TiltCard from '@/components/TiltCard';
 import { sounds } from '@/lib/sound';
 import { useToast } from '@/lib/ToastContext';
+import { useResponsiveItemLimit } from '@/hooks/useResponsiveItemLimit';
 import { copyToClipboard, formatDate, lockPageScroll } from '@/lib/utils';
 import type { Poem } from '@/lib/types';
 
@@ -41,6 +42,7 @@ export default function Literature({ poems, searchTarget }: LiteratureProps) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Poem | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const itemLimit = useResponsiveItemLimit();
 
   useEffect(() => {
     if (!searchTarget) return;
@@ -69,13 +71,14 @@ export default function Literature({ poems, searchTarget }: LiteratureProps) {
     return () => cancelAnimationFrame(frame);
   }, [searchTarget, showAll, filtered.length]);
 
-  const displayed = filtered.slice(0, showAll ? filtered.length : 5);
+  const displayed = filtered.slice(0, showAll ? filtered.length : itemLimit);
+  const hasOverflow = filtered.length > itemLimit;
 
   return (
-    <section id="literature" className="relative py-24 px-4 sm:px-6">
+    <section id="literature" className="section-shell px-4 sm:px-6 gpu-accelerated">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-12 reveal">
+        <div className="text-center mb-12 reveal gpu-layer">
           <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Words & Worlds</p>
           <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Literature</h2>
           <div className="heading-line mx-auto mb-6" />
@@ -160,9 +163,13 @@ export default function Literature({ poems, searchTarget }: LiteratureProps) {
             ))}
           </div>
         )}
-        {filtered.length > 5 && (
+        {hasOverflow && (
           <div className="mt-8 flex justify-center">
-            <button type="button" onClick={() => setShowAll((current) => !current)} className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800">
+            <button
+              type="button"
+              onClick={() => { sounds.click(); setShowAll((current) => !current); }}
+              className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800"
+            >
               {showAll ? 'SHOW LESS' : 'SEE ALL'}
             </button>
           </div>
@@ -219,8 +226,8 @@ function ReadingModal({ poem, onClose }: { poem: Poem; onClose: () => void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 animate-fade-in" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-md" />
+    <div className="fixed inset-0 z-[9000] flex items-center justify-center p-4 animate-fade-in gpu-accelerated" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-md gpu-layer" />
 
       {/* Reading progress within modal */}
       <div className="absolute top-0 left-0 right-0 h-0.5 bg-white/5 z-10">

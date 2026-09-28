@@ -1,13 +1,15 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { sounds } from '@/lib/sound';
 import { useData } from '@/lib/DataContext';
 import { useToast } from '@/lib/ToastContext';
+import { useResponsiveItemLimit } from '@/hooks/useResponsiveItemLimit';
 import { formatDate, lockPageScroll } from '@/lib/utils';
 import type { Certificate, GuestbookEntry } from '@/lib/types';
 import Achievements from '@/sections/Achievements';
 
 interface ExtraProps {
   searchTarget?: string | null;
+  showAchievements?: boolean;
 }
 
 const AVATAR_COLORS = [
@@ -18,37 +20,45 @@ const AVATAR_COLORS = [
   'from-amber-400 to-orange-500',
 ];
 
-export default function Extra({ searchTarget }: ExtraProps) {
-  const { data, addGuestbookEntry, isAdmin, deleteGuestbookEntry } = useData();
+export default function Extra({ searchTarget, showAchievements = true }: ExtraProps) {
+  const { data, addGuestbookEntry, isAdmin, deleteGuestbookEntry, isSectionVisible } = useData();
   const { notify } = useToast();
 
   const [name, setName] = useState('');
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactMsg, setContactMsg] = useState('');
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
   const [showAllGuestbook, setShowAllGuestbook] = useState(false);
+  const [showAllCertificates, setShowAllCertificates] = useState(false);
+  // The Visitor Wall always shows at least 5 approved messages by default.
+  const guestbookLimit = useResponsiveItemLimit(5, 5);
+
+  const showGuestbook = isSectionVisible('guestbook');
+  const showContact = isSectionVisible('contact');
+  const showVisitors = isSectionVisible('visitors');
+  const showCertificates = isSectionVisible('certificates');
 
   const sortedGuestbook = useMemo(
-    () => data.guestbook.filter((entry) => entry.approved !== false).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    () => data.guestbook
+      .filter((entry) => entry.approved !== false)
+      .slice()
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [data.guestbook]
   );
+  const displayedGuestbook = showAllGuestbook ? sortedGuestbook : sortedGuestbook.slice(0, guestbookLimit);
+  const hasMoreGuestbook = sortedGuestbook.length > guestbookLimit;
 
-  useEffect(() => {
-    if (!showAllGuestbook) return;
-    const unlockScroll = lockPageScroll();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowAllGuestbook(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      unlockScroll();
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [showAllGuestbook]);
+  const visibleCertificates = useMemo(
+    () => data.certificates.filter((certificate) => certificate.visible !== false),
+    [data.certificates]
+  );
+  const displayedCertificates = showAllCertificates ? visibleCertificates : visibleCertificates.slice(0, 5);
 
-  const handleSignGuestbook = () => {
+  const handleSignGuestbook = async () => {
+    if (submitting) return;
     if (!name.trim() || !message.trim()) {
       notify('Please enter your name and message', 'error');
       sounds.error();
@@ -61,10 +71,17 @@ export default function Extra({ searchTarget }: ExtraProps) {
       date: new Date().toISOString(),
       avatar: name.trim().charAt(0).toUpperCase(),
     };
-    addGuestbookEntry(entry);
-    setName('');
-    setMessage('');
-    notify('Thank you for signing the guestbook!');
+    setSubmitting(true);
+    try {
+      await addGuestbookEntry(entry);
+      setName('');
+      setMessage('');
+      notify('Thank you for signing the guestbook!');
+    } catch {
+      notify('Message is visible locally, but could not sync to the cloud. Please try again later.', 'error');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleContactSubmit = () => {
@@ -84,10 +101,10 @@ export default function Extra({ searchTarget }: ExtraProps) {
   };
 
   return (
-    <section id="extra" className="relative py-24 px-4 sm:px-6">
+    <section id="extra" className="section-shell px-4 sm:px-6 gpu-accelerated">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-16 reveal">
+        <div className="text-center mb-16 reveal gpu-layer">
           <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Connect & Explore</p>
           <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Extra</h2>
           <div className="heading-line mx-auto mb-6" />
@@ -96,6 +113,7 @@ export default function Extra({ searchTarget }: ExtraProps) {
 
         <div className="grid lg:grid-cols-2 gap-8">
           {/* Guestbook */}
+          {showGuestbook && (
           <div className="reveal">
             <div className="glass-card rounded-3xl p-6 sm:p-8 h-full">
               <h3 className="font-display text-xl font-bold mb-2 text-white/90">Visitor Wall</h3>
@@ -122,18 +140,19 @@ export default function Extra({ searchTarget }: ExtraProps) {
                 <button
                   onClick={handleSignGuestbook}
                   onMouseEnter={() => sounds.hover()}
-                  className="btn-premium w-full py-3 rounded-xl text-sm font-semibold text-white"
+                  disabled={submitting}
+                  className="btn-premium w-full py-3 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  Sign Guestbook
+                  {submitting ? 'Saving…' : 'Sign Guestbook'}
                 </button>
               </div>
 
               {/* Entries */}
-              <div className="ios-scroll space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
-                {sortedGuestbook.length === 0 ? (
+              <div className="space-y-3">
+                {displayedGuestbook.length === 0 ? (
                   <p className="text-center text-white/30 text-sm py-8">Be the first to sign!</p>
                 ) : (
-                  sortedGuestbook.slice(0, 5).map((entry, i) => (
+                  displayedGuestbook.map((entry, i) => (
                     <div key={entry.id} className="glass rounded-2xl p-4 group">
                       <div className="flex items-start gap-3">
                         <div className={`shrink-0 w-10 h-10 rounded-full bg-gradient-to-br ${AVATAR_COLORS[i % AVATAR_COLORS.length]} flex items-center justify-center font-display font-bold text-navy-deep text-sm`}>
@@ -150,6 +169,7 @@ export default function Extra({ searchTarget }: ExtraProps) {
                           <button
                             onClick={() => { sounds.click(); deleteGuestbookEntry(entry.id); notify('Entry deleted', 'info'); }}
                             className="opacity-0 group-hover:opacity-100 text-rose-400/60 hover:text-rose-400 transition-all text-xs"
+                            aria-label={`Delete message from ${entry.name}`}
                           >
                             ✕
                           </button>
@@ -159,21 +179,27 @@ export default function Extra({ searchTarget }: ExtraProps) {
                   ))
                 )}
               </div>
-              {sortedGuestbook.length > 5 && (
-                <button type="button" onClick={() => setShowAllGuestbook(true)} className="btn-premium mt-5 w-full rounded-xl py-3 text-xs font-semibold tracking-[0.16em] text-slate-800">
-                  SEE ALL ({sortedGuestbook.length})
+              {hasMoreGuestbook && (
+                <button
+                  type="button"
+                  onClick={() => { sounds.click(); setShowAllGuestbook((current) => !current); }}
+                  className="btn-premium mt-5 w-full rounded-xl py-3 text-xs font-semibold tracking-[0.16em] text-slate-800"
+                >
+                  {showAllGuestbook ? 'SHOW LESS' : `SEE ALL (${sortedGuestbook.length})`}
                 </button>
               )}
             </div>
           </div>
+          )}
 
           {/* Contact + Socials */}
+          {(showContact || showVisitors) && (
           <div className="space-y-8 reveal">
             {/* Contact form */}
+            {showContact && (
             <div className="glass-card rounded-3xl p-6 sm:p-8">
               <h3 className="font-display text-xl font-bold mb-2 text-white/90">Get in Touch</h3>
               <p className="text-sm text-white/40 mb-6">Have a question or want to collaborate? Send a message.</p>
-
               <div className="space-y-3">
                 <input
                   type="text"
@@ -205,8 +231,10 @@ export default function Extra({ searchTarget }: ExtraProps) {
                 </button>
               </div>
             </div>
+            )}
 
             {/* Visitor counter card */}
+            {showVisitors && (
             <div className="glass-card rounded-3xl p-6 flex items-center justify-between">
               <div>
                 <p className="text-xs text-white/40 uppercase tracking-wider mb-1">Total Visitors</p>
@@ -217,10 +245,13 @@ export default function Extra({ searchTarget }: ExtraProps) {
                 <span className="text-xs text-white/40">Live</span>
               </div>
             </div>
+            )}
           </div>
+          )}
         </div>
 
         {/* Certificates */}
+        {showCertificates && (
         <div className="reveal mt-12" aria-labelledby="certificates-heading">
           <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -230,13 +261,13 @@ export default function Extra({ searchTarget }: ExtraProps) {
             <p className="text-sm text-white/50">A selection of completed courses and credentials.</p>
           </div>
 
-          {data.certificates.filter((certificate) => certificate.visible !== false).length === 0 ? (
+          {visibleCertificates.length === 0 ? (
             <div className="glass-card rounded-2xl px-5 py-8 text-center text-sm text-white/50">
               Certificates will appear here soon.
             </div>
           ) : (
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {data.certificates.filter((certificate) => certificate.visible !== false).map((certificate) => (
+              {displayedCertificates.map((certificate) => (
                 <button
                   key={certificate.id}
                   type="button"
@@ -261,9 +292,23 @@ export default function Extra({ searchTarget }: ExtraProps) {
               ))}
             </div>
           )}
+          {visibleCertificates.length > 5 && (
+            <div className="mt-8 flex justify-center">
+              <button
+                type="button"
+                onClick={() => { sounds.click(); setShowAllCertificates((current) => !current); }}
+                className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800"
+              >
+                {showAllCertificates ? 'SHOW LESS' : 'SEE ALL'}
+              </button>
+            </div>
+          )}
         </div>
+        )}
 
-        <Achievements achievements={data.achievements.filter((achievement) => achievement.visible !== false)} searchTarget={searchTarget} />
+        {showAchievements && (
+          <Achievements achievements={data.achievements.filter((achievement) => achievement.visible !== false)} searchTarget={searchTarget} />
+        )}
 
         {/* Footer */}
         <div className="text-center mt-20 pt-10 border-t border-white/5">
@@ -274,29 +319,6 @@ export default function Extra({ searchTarget }: ExtraProps) {
       </div>
       {selectedCertificate && (
         <CertificateLightbox certificate={selectedCertificate} onClose={() => setSelectedCertificate(null)} />
-      )}
-      {showAllGuestbook && (
-        <div className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowAllGuestbook(false)}>
-          <div className="glass-strong ios-scroll relative max-h-[85dvh] w-full max-w-2xl overflow-y-auto rounded-2xl p-5 sm:p-7" role="dialog" aria-modal="true" aria-label="All approved guestbook messages" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-5 flex items-center justify-between gap-4">
-              <h3 className="font-display text-xl font-bold">Visitor Wall</h3>
-              <button type="button" onClick={() => setShowAllGuestbook(false)} className="glass flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" aria-label="Close visitor wall">×</button>
-            </div>
-            <div className="space-y-3">
-              {sortedGuestbook.map((entry, index) => (
-                <div key={entry.id} className="glass-card rounded-xl p-4">
-                  <div className="flex items-start gap-3">
-                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${AVATAR_COLORS[index % AVATAR_COLORS.length]} font-bold text-slate-900`}>{entry.avatar}</div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-sm font-semibold">{entry.name}</span><span className="text-xs text-slate-500">{formatDate(entry.date)}</span></div>
-                      <p className="mt-1 text-sm text-slate-600">{entry.message}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
       )}
     </section>
   );
@@ -317,12 +339,12 @@ function CertificateLightbox({ certificate, onClose }: { certificate: Certificat
 
   return (
     <div
-      className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[9200] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm gpu-accelerated"
       onClick={onClose}
       role="presentation"
     >
       <div
-        className="glass-strong ios-scroll max-h-[90dvh] w-full max-w-4xl overflow-y-auto rounded-2xl p-3 sm:p-5"
+        className="glass-strong ios-scroll max-h-[90dvh] w-full max-w-4xl overflow-y-auto rounded-2xl p-3 sm:p-5 gpu-layer"
         role="dialog"
         aria-modal="true"
         aria-label={certificate.title}

@@ -11,7 +11,7 @@ import {
   logoutCloudAdmin,
   saveCloudSnapshot,
 } from './cloudData';
-import { DEFAULT_SECTION_ORDER, loadSectionOrder, saveSectionOrder, type PublicSectionId } from './sectionOrder';
+import { DEFAULT_SECTION_ORDER, loadSectionOrder, saveSectionOrder, loadSectionVisibility, saveSectionVisibility, isSectionVisible, type PublicSectionId, type SectionVisibility, type ToggleableId } from './sectionOrder';
 
 const STORAGE_KEY = 'portfolio_data_v1';
 const VISITOR_KEY = 'portfolio_visitor_counted';
@@ -36,6 +36,9 @@ function normalizeContentTypes(data: PortfolioData): PortfolioData {
 interface DataContextValue {
   data: PortfolioData;
   sectionOrder: PublicSectionId[];
+  sectionVisibility: SectionVisibility;
+  isSectionVisible: (id: ToggleableId) => boolean;
+  toggleSectionVisible: (id: ToggleableId) => void;
   syncStatus: 'loading' | 'synced' | 'saving' | 'offline' | 'error';
   isAdmin: boolean;
   loginAdmin: (password: string) => Promise<boolean>;
@@ -64,7 +67,7 @@ interface DataContextValue {
   updateCertificate: (id: string, certificate: Partial<Certificate>) => void;
   deleteCertificate: (id: string) => void;
   // Guestbook
-  addGuestbookEntry: (entry: Omit<GuestbookEntry, 'id'>) => void;
+  addGuestbookEntry: (entry: Omit<GuestbookEntry, 'id'>) => Promise<void>;
   updateGuestbookEntry: (id: string, entry: Partial<GuestbookEntry>) => void;
   deleteGuestbookEntry: (id: string) => void;
   // Admin password
@@ -146,16 +149,21 @@ function saveData(data: PortfolioData) {
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<PortfolioData>(loadData);
   const [sectionOrder, setSectionOrder] = useState<PublicSectionId[]>(loadSectionOrder);
+  const [sectionVisibility, setSectionVisibility] = useState<SectionVisibility>(loadSectionVisibility);
   const [cloudLoaded, setCloudLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<DataContextValue['syncStatus']>('loading');
   const [isAdmin, setIsAdmin] = useState(false);
   const syncRequestId = useRef(0);
+  const pendingGuestbook = useRef<GuestbookEntry[]>([]);
+  const submittedDuringLoad = useRef<GuestbookEntry[]>([]);
+  const cloudLoadedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
     fetchCloudSnapshot()
       .then((snapshot) => {
         if (!active) return;
+        const recentEntries = submittedDuringLoad.current;
         setData((current) => normalizeContentTypes({
           ...current,
           ...snapshot.data,
@@ -165,10 +173,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
           studyMaterials: snapshot.data.studyMaterials ?? current.studyMaterials,
           achievements: snapshot.data.achievements ?? current.achievements,
           certificates: snapshot.data.certificates ?? current.certificates,
-          guestbook: snapshot.data.guestbook ?? current.guestbook,
+          guestbook: [
+            ...recentEntries.filter((entry) => !(snapshot.data.guestbook ?? []).some((saved) => saved.id === entry.id)),
+            ...(snapshot.data.guestbook ?? current.guestbook),
+          ],
           visitorCount: snapshot.data.visitorCount ?? current.visitorCount,
         }));
         setSectionOrder(snapshot.sectionOrder);
+        submittedDuringLoad.current = [];
+        // Only adopt the cloud visibility map when the record actually carries
+        // one. A bin created before this feature returns {} and must not wipe
+        // the admin's locally saved hide/unhide choices.
+        setSectionVisibility((current) =>
+          snapshot.sectionVisibility && Object.keys(snapshot.sectionVisibility).length > 0
+            ? snapshot.sectionVisibility
+            : current
+        );
         setIsAdmin(snapshot.isAdmin);
         setSyncStatus('synced');
       })
@@ -176,7 +196,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (active) setSyncStatus('offline');
       })
       .finally(() => {
-        if (active) setCloudLoaded(true);
+        if (active) {
+          cloudLoadedRef.current = true;
+          setCloudLoaded(true);
+        }
       });
     return () => { active = false; };
   }, []);
@@ -185,13 +208,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     saveData(data);
     try { localStorage.setItem(SOCIAL_LINKS_MIGRATION_KEY, 'true'); } catch { /* Ignore unavailable storage. */ }
     saveSectionOrder(sectionOrder);
-    if (!cloudLoaded || !isAdmin) return;
+    saveSectionVisibility(sectionVisibility);
+    if (!cloudLoaded || !isAdmin || pendingGuestbook.current.length > 0) return;
     const requestId = ++syncRequestId.current;
     setSyncStatus('saving');
-    saveCloudSnapshot(data, sectionOrder)
+    saveCloudSnapshot(data, sectionOrder, sectionVisibility)
       .then(() => { if (requestId === syncRequestId.current) setSyncStatus('synced'); })
       .catch(() => { if (requestId === syncRequestId.current) setSyncStatus('error'); });
-  }, [data, sectionOrder, cloudLoaded, isAdmin]);
+  }, [data, sectionOrder, sectionVisibility, cloudLoaded, isAdmin]);
 
   // Increment visitor count once per session
   useEffect(() => {
@@ -227,9 +251,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSectionOrder(order);
   }, []);
 
+  const isSectionVisibleStable = useCallback(
+    (id: ToggleableId) => isSectionVisible(sectionVisibility, id),
+    [sectionVisibility]
+  );
+
+  const toggleSectionVisible = useCallback((id: ToggleableId) => {
+    setSectionVisibility((current) => {
+      const next = { ...current };
+      if (next[id] === true) delete next[id];
+      else next[id] = true;
+      return next;
+    });
+  }, []);
+
   const resetData = useCallback(() => {
     setData(seedData);
     setSectionOrder([...DEFAULT_SECTION_ORDER]);
+    setSectionVisibility({});
   }, []);
 
   const updateProfile = useCallback((profile: Profile) => {
@@ -300,18 +339,27 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addGuestbookEntry = useCallback((entry: Omit<GuestbookEntry, 'id'>) => {
-    const newEntry = { ...entry, id: uid(), approved: false };
+    const newEntry: GuestbookEntry = { ...entry, id: uid(), approved: true };
+    pendingGuestbook.current = [...pendingGuestbook.current, newEntry];
+    if (!cloudLoadedRef.current) submittedDuringLoad.current = [...submittedDuringLoad.current, newEntry];
     setData((d) => ({ ...d, guestbook: [newEntry, ...d.guestbook] }));
-    if (isAdmin) return;
-    addCloudGuestbookEntry(newEntry)
+    // Always use the guestbook endpoint: a public submission must not overwrite
+    // the full cloud record, even when the current browser is logged in as admin.
+    return addCloudGuestbookEntry(newEntry)
       .then(({ entry: savedEntry }) => {
         setData((d) => ({
           ...d,
-          guestbook: d.guestbook.map((item) => item.id === newEntry.id ? savedEntry : item),
+          guestbook: d.guestbook.map((item) => (item.id === newEntry.id ? { ...item, ...savedEntry } : item)),
         }));
+        pendingGuestbook.current = pendingGuestbook.current.filter((item) => item.id !== newEntry.id);
       })
-      .catch(() => setSyncStatus('error'));
-  }, [isAdmin]);
+      .catch((error: unknown) => {
+        setSyncStatus('error');
+        // Leave the failed entry visible locally, without blocking later admin edits.
+        pendingGuestbook.current = pendingGuestbook.current.filter((item) => item.id !== newEntry.id);
+        throw error;
+      });
+  }, []);
 
   const deleteGuestbookEntry = useCallback((id: string) => {
     setData((d) => ({ ...d, guestbook: d.guestbook.filter((g) => g.id !== id) }));
@@ -347,7 +395,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value: DataContextValue = {
-    data, sectionOrder, syncStatus, isAdmin, loginAdmin, logoutAdmin, updateSectionOrder, resetData, updateProfile,
+    data, sectionOrder, sectionVisibility, isSectionVisible: isSectionVisibleStable, toggleSectionVisible,
+    syncStatus, isAdmin, loginAdmin, logoutAdmin, updateSectionOrder, resetData, updateProfile,
     addPoem, updatePoem, deletePoem,
     addMedia, updateMedia, deleteMedia,
     addStudyMaterial, updateStudyMaterial, deleteStudyMaterial,

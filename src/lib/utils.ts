@@ -36,25 +36,31 @@ export function copyToClipboard(text: string): Promise<void> {
   });
 }
 
+/**
+ * Scroll lock for modals.
+ *
+ * Deliberately avoids `position: fixed` on <body>: that pattern is what locks
+ * scrolling permanently and blank/crash the page on iOS Safari. We use
+ * `overflow: hidden` with a scrollbar-gutter-preserving width compensation
+ * instead, which iOS handles correctly and costs no layout thrash.
+ */
 let scrollLockCount = 0;
-let lockedScrollY = 0;
-let previousBodyStyles: Pick<CSSStyleDeclaration, 'position' | 'top' | 'left' | 'right' | 'width'> | null = null;
+let previousBodyOverflow = '';
+let previousBodyPaddingRight = '';
 
 export function lockPageScroll() {
   if (scrollLockCount === 0) {
-    lockedScrollY = window.scrollY;
-    previousBodyStyles = {
-      position: document.body.style.position,
-      top: document.body.style.top,
-      left: document.body.style.left,
-      right: document.body.style.right,
-      width: document.body.style.width,
-    };
-    document.body.style.position = 'fixed';
-    document.body.style.top = `-${lockedScrollY}px`;
-    document.body.style.left = '0';
-    document.body.style.right = '0';
-    document.body.style.width = '100%';
+    const { body } = document;
+    previousBodyOverflow = body.style.overflow;
+    previousBodyPaddingRight = body.style.paddingRight;
+    // Reserve the scrollbar width so locking does not shift the layout.
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) {
+      const current = parseInt(window.getComputedStyle(body).paddingRight, 10) || 0;
+      body.style.paddingRight = `${current + scrollbarWidth}px`;
+    }
+    body.classList.add('scroll-locked');
   }
   scrollLockCount += 1;
 
@@ -63,9 +69,10 @@ export function lockPageScroll() {
     if (released) return;
     released = true;
     scrollLockCount = Math.max(0, scrollLockCount - 1);
-    if (scrollLockCount !== 0 || !previousBodyStyles) return;
-    Object.assign(document.body.style, previousBodyStyles);
-    previousBodyStyles = null;
-    window.scrollTo(0, lockedScrollY);
+    if (scrollLockCount !== 0) return;
+    const { body } = document;
+    body.style.overflow = previousBodyOverflow;
+    body.style.paddingRight = previousBodyPaddingRight;
+    body.classList.remove('scroll-locked');
   };
 }

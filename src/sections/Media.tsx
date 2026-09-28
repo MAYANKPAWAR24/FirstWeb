@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Music2 } from 'lucide-react';
 import { sounds } from '@/lib/sound';
 import { lockPageScroll } from '@/lib/utils';
+import { useResponsiveItemLimit } from '@/hooks/useResponsiveItemLimit';
 import type { MediaItem } from '@/lib/types';
 
 interface MediaProps {
@@ -33,6 +34,7 @@ export default function Media({ items, searchTarget }: MediaProps) {
   const [filter, setFilter] = useState<MediaFilter>('all');
   const [lightbox, setLightbox] = useState<MediaItem | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const itemLimit = useResponsiveItemLimit();
 
   useEffect(() => {
     if (!searchTarget) return;
@@ -52,13 +54,14 @@ export default function Media({ items, searchTarget }: MediaProps) {
     return () => cancelAnimationFrame(frame);
   }, [searchTarget, showAll, filtered.length]);
 
-  const displayed = filtered.slice(0, showAll ? filtered.length : 5);
+  const displayed = filtered.slice(0, showAll ? filtered.length : itemLimit);
+  const hasOverflow = filtered.length > itemLimit;
 
   return (
-    <section id="media" className="relative py-24 px-4 sm:px-6">
+    <section id="media" className="section-shell px-4 sm:px-6 gpu-accelerated">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-12 reveal">
+        <div className="text-center mb-12 reveal gpu-layer">
           <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Visual Stories</p>
           <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Media</h2>
           <div className="heading-line mx-auto mb-6" />
@@ -108,12 +111,18 @@ export default function Media({ items, searchTarget }: MediaProps) {
                         alt={item.title}
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                         loading="lazy"
+                        decoding="async"
+                        // External thumbnails can 404 or be blocked; fall back to
+                        // the type glyph instead of showing a broken image.
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none';
+                          event.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
                       />
-                    ) : (
-                      <div className="flex h-full items-center justify-center bg-gradient-to-br from-cyan-950 to-slate-900 text-cyan-300">
-                        <Music2 size={42} strokeWidth={1.3} aria-hidden="true" />
-                      </div>
-                    )}
+                    ) : null}
+                    <div className={`${item.thumbnail ? 'hidden ' : ''}absolute inset-0 flex items-center justify-center bg-gradient-to-br from-cyan-950 to-slate-900 text-cyan-300`}>
+                      <Music2 size={42} strokeWidth={1.3} aria-hidden="true" />
+                    </div>
                     <div className="media-image-shade absolute inset-0 opacity-60 group-hover:opacity-80 transition-opacity" />
 
                     {/* Type badge */}
@@ -152,9 +161,13 @@ export default function Media({ items, searchTarget }: MediaProps) {
             ))}
           </div>
         )}
-        {filtered.length > 5 && (
+        {hasOverflow && (
           <div className="mt-8 flex justify-center">
-            <button type="button" onClick={() => setShowAll((current) => !current)} className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800">
+            <button
+              type="button"
+              onClick={() => { sounds.click(); setShowAll((current) => !current); }}
+              className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800"
+            >
               {showAll ? 'SHOW LESS' : 'SEE ALL'}
             </button>
           </div>
@@ -172,14 +185,22 @@ export default function Media({ items, searchTarget }: MediaProps) {
 function MediaLightbox({ item, onClose }: { item: MediaItem; onClose: () => void }) {
   useEffect(() => lockPageScroll(), []);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div
-      className="fixed inset-0 z-[9000] flex items-center justify-center p-4 animate-fade-in"
+      className="fixed inset-0 z-[9000] flex items-center justify-center p-4 animate-fade-in gpu-accelerated"
       onClick={onClose}
     >
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" />
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-md gpu-layer" />
       <div
-        className="ios-scroll relative max-h-[90dvh] w-full max-w-4xl overflow-y-auto animate-scale-in"
+        className="ios-scroll relative max-h-[90dvh] w-full max-w-4xl overflow-y-auto animate-scale-in gpu-layer"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="glass-strong rounded-3xl overflow-hidden">
