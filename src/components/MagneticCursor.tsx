@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 
 /** Magnetic glowing cursor with trailing ring. Hidden on touch devices. */
 export default function MagneticCursor() {
@@ -8,6 +8,24 @@ export default function MagneticCursor() {
   const pendingRef = useRef({ x: 0, y: 0 });
   const ringPosRef = useRef({ x: 0, y: 0 });
   const hoveringRef = useRef(false);
+  const [enabled, setEnabled] = useState(true);
+
+  // Allow user to disable cursor with Ctrl+Shift+C
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'C') {
+        setEnabled(prev => {
+          const next = !prev;
+          document.body.classList.toggle('no-magnetic-cursor', !next);
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  if (!enabled) return null;
 
   const setHover = useCallback((hovering: boolean) => {
     if (hoveringRef.current === hovering) return;
@@ -18,13 +36,12 @@ export default function MagneticCursor() {
   const animate = useCallback(() => {
     const dx = pendingRef.current.x - ringPosRef.current.x;
     const dy = pendingRef.current.y - ringPosRef.current.y;
-    // Stop the rAF loop once the ring has converged on the pointer.
     if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
       rafRef.current = 0;
       return;
     }
-    ringPosRef.current.x += dx * 0.2;
-    ringPosRef.current.y += dy * 0.2;
+    ringPosRef.current.x += dx * 0.15;
+    ringPosRef.current.y += dy * 0.15;
     const ring = ringRef.current;
     if (ring) {
       ring.style.transform = `translate3d(${ringPosRef.current.x}px, ${ringPosRef.current.y}px, 0) translate(-50%, -50%)`;
@@ -37,7 +54,6 @@ export default function MagneticCursor() {
   }, [animate]);
 
   useEffect(() => {
-    // Only for real pointing devices, and never when motion is reduced.
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
 
@@ -59,7 +75,6 @@ export default function MagneticCursor() {
     const onDown = () => setHover(true);
     const onUp = () => setHover(false);
 
-    // Delegate hover checks only to interactive controls, not every card.
     const interactiveSelector = 'a, button, input, textarea, select, [data-cursor-hover]';
     const onOver = (e: MouseEvent) => {
       if (e.target instanceof Element && e.target.closest(interactiveSelector)) setHover(true);
@@ -74,7 +89,6 @@ export default function MagneticCursor() {
     window.addEventListener('mouseup', onUp, { passive: true });
     document.addEventListener('mouseover', onOver, { passive: true });
     document.addEventListener('mouseout', onOut, { passive: true });
-    // The ring only needs animating while the pointer is actually moving.
     kick();
 
     return () => {

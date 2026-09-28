@@ -181,44 +181,51 @@ body.scroll-locked {
   position: fixed;
   top: 0;
   left: 0;
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   background: var(--cyan-accent);
   border-radius: 50%;
   pointer-events: none;
-  z-index: 99999;
+  z-index: 9990;
   transform: translate3d(-50%, -50%, 0);
   will-change: transform;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   transition: width 0.2s, height 0.2s, background 0.2s;
-  box-shadow: 0 0 12px rgba(34, 211, 238, 0.6);
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.5);
+  opacity: 0.7;
 }
 
 .cursor-ring {
   position: fixed;
   top: 0;
   left: 0;
-  width: 40px;
-  height: 40px;
-  border: 1.5px solid rgba(34, 211, 238, 0.4);
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(34, 211, 238, 0.3);
   border-radius: 50%;
   pointer-events: none;
-  z-index: 99998;
+  z-index: 9989;
   transform: translate3d(-50%, -50%, 0);
   will-change: transform;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  transition: width 0.3s, height 0.3s, border-color 0.3s;
+  transition: width 0.3s, height 0.3s, border-color 0.3s, background 0.3s;
 }
 
 .cursor-hover .cursor-dot {
   width: 0; height: 0;
 }
 .cursor-hover .cursor-ring {
-  width: 60px; height: 60px;
-  border-color: rgba(167, 139, 250, 0.6);
-  background: rgba(167, 139, 250, 0.08);
+  width: 48px; height: 48px;
+  border-color: rgba(167, 139, 250, 0.5);
+  background: rgba(167, 139, 250, 0.06);
+}
+
+/* Disable magnetic cursor entirely if user prefers */
+.no-magnetic-cursor .cursor-dot,
+.no-magnetic-cursor .cursor-ring {
+  display: none !important;
 }
 
 /* === Animations === */
