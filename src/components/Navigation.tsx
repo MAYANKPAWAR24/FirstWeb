@@ -1,43 +1,74 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AtSign, BookOpen, GraduationCap, Image, Search, Sparkles, User, X, type LucideIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Menu, Search, Volume2, VolumeX, X } from 'lucide-react';
 import { sounds } from '@/lib/sound';
 import { useData } from '@/lib/DataContext';
-import type { PortfolioData, SectionId } from '@/lib/types';
 import { searchPortfolio, type PortfolioSearchResult } from '@/lib/search';
+import Overlay from '@/components/Overlay';
+import { useEscapeKey, useFocusTrap } from '@/hooks/useFocusTrap';
+import { PUBLIC_SECTIONS, isBlockHidden, type PublicSectionId } from '@/lib/sectionOrder';
+import { sectionHasContent } from '@/lib/sectionContent';
+import type { SectionId } from '@/lib/types';
+import { cls } from '@/lib/utils';
 
 interface NavProps {
   onNavigate: (id: SectionId) => void;
-  data: PortfolioData;
   onSearchSelect: (result: PortfolioSearchResult) => void;
   activeSection: SectionId;
   soundOn: boolean;
+  /** False when the admin has disallowed sound site-wide; hides the toggle. */
+  soundAllowed: boolean;
   onToggleSound: () => void;
 }
 
-const NAV_ITEMS: { id: SectionId; label: string; icon: LucideIcon }[] = [
-  { id: 'profile', label: 'Profile', icon: User },
-  { id: 'literature', label: 'Literature', icon: BookOpen },
-  { id: 'media', label: 'Media', icon: Image },
-  { id: 'study', label: 'Study', icon: GraduationCap },
-  { id: 'extra', label: 'Extra', icon: Sparkles },
-  { id: 'follow', label: 'Follow Me', icon: AtSign },
-];
-
-export default function Navigation({ onNavigate, data, onSearchSelect, activeSection, soundOn, onToggleSound }: NavProps) {
-  const { sectionVisibility } = useData();
+/**
+ * Navigation items come from the shared registry, filtered by visibility.
+ *
+ * These are real `<a href="#id">` anchors, not buttons with a scroll handler.
+ * That is a functional requirement here: the previous implementation had no
+ * crawlable internal links at all, which is one of the reasons search engines
+ * reported "very few links" and could not follow the page structure.
+ */
+export default function Navigation({ onNavigate, onSearchSelect, activeSection, soundOn, soundAllowed, onToggleSound }: NavProps) {
+  const { data, sectionVisibility, sectionOrder } = useData();
   const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [resultsOpen, setResultsOpen] = useState(false);
-  const results = useMemo(() => searchPortfolio(query, data).filter((result) =>
-    (result.sectionId === 'home' || sectionVisibility[result.sectionId] !== true) &&
-    (result.kind !== 'achievement' || sectionVisibility.achievements !== true)
-  ), [query, data, sectionVisibility]);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
-  // Hidden sections must not remain reachable from the nav.
-  const navItems = useMemo(
-    () => NAV_ITEMS.filter((item) => item.id === 'home' || sectionVisibility[item.id] !== true),
-    [sectionVisibility]
+  const navItems = useMemo(() => {
+    const ordered = sectionOrder.filter((id) => sectionVisibility[id] !== true);
+    // Registry order for labels, saved order for sequence.
+    const labels = new Map(PUBLIC_SECTIONS.map((entry) => [entry.id as PublicSectionId, entry]));
+    return ordered
+      .map((id) => ({ id: id as SectionId, label: labels.get(id as PublicSectionId)?.label ?? id }))
+      // Visibility alone is not enough. Certificates with no entries, and Play
+      // Break with everything disabled, render nothing — linking to them scrolls
+      // nowhere. Both the nav and the section renderer ask `sectionHasContent`.
+      .filter((entry) => !isBlockHidden(sectionVisibility, entry.id))
+      .filter((entry) => sectionHasContent(entry.id, data));
+  }, [sectionOrder, sectionVisibility, data]);
+
+  // Seven is the most that stays legible above the search field on a laptop;
+  // anything beyond that collapses into a labelled overflow menu rather than
+  // wrapping to a second row or being silently dropped.
+  const MAX_VISIBLE = 7;
+  const primary = navItems.slice(0, MAX_VISIBLE);
+  const overflow = navItems.slice(MAX_VISIBLE);
+
+  const results = useMemo(
+    () => searchPortfolio(query, data).filter((result) => (
+      // A result must never point at a section the admin has hidden.
+      !isBlockHidden(sectionVisibility, result.sectionId)
+      && !(result.kind === 'achievement' && isBlockHidden(sectionVisibility, 'achievements'))
+      && !(result.kind === 'certificate' && isBlockHidden(sectionVisibility, 'certificates'))
+      && !(result.kind === 'portfolio' && isBlockHidden(sectionVisibility, 'portfolio'))
+    )),
+    [query, data, sectionVisibility],
   );
 
   useEffect(() => {
@@ -46,7 +77,7 @@ export default function Navigation({ onNavigate, data, onSearchSelect, activeSec
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        setScrolled(window.scrollY > 40);
+        setScrolled(window.scrollY > 24);
         ticking = false;
       });
     };
@@ -55,54 +86,114 @@ export default function Navigation({ onNavigate, data, onSearchSelect, activeSec
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const handleClick = (id: SectionId) => {
+  // Move the active indicator under the current item instead of rendering a
+  // border on every link, so the transition is one transform.
+  useEffect(() => {
+    const indicator = indicatorRef.current;
+    const list = listRef.current;
+    if (!indicator || !list) return;
+    const target = list.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!target) {
+      indicator.style.opacity = '0';
+      return;
+    }
+    indicator.style.opacity = '1';
+    indicator.style.width = `${target.offsetWidth - 12}px`;
+    indicator.style.transform = `translateX(${target.offsetLeft + 6}px)`;
+  }, [activeSection, primary.length]);
+
+  useEffect(() => {
+    if (!resultsOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!searchWrapRef.current?.contains(event.target as Node)) setResultsOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [resultsOpen]);
+
+  useFocusTrap(drawerRef, drawerOpen);
+  useEscapeKey(drawerOpen, () => setDrawerOpen(false));
+
+  const go = (id: SectionId) => {
     sounds.click();
     onNavigate(id);
-    setMobileOpen(false);
+    setDrawerOpen(false);
+    setOverflowOpen(false);
   };
 
   return (
     <>
-      <nav className={`fixed top-0 left-0 right-0 z-[1000] transition-all duration-500 ${scrolled ? 'py-2' : 'py-4'}`}>
-        <div className={`mx-auto max-w-7xl px-4 sm:px-6 transition-all duration-500`}>
-          <div className={`flex items-center gap-3 rounded-2xl px-3 sm:px-5 py-3 transition-all duration-500 ${scrolled ? 'glass-strong shadow-2xl' : 'glass'}`}>
-            {/* Logo */}
-            <button
-              onClick={() => { sounds.click(); onNavigate('home'); }}
-              className="flex items-center gap-2 group"
+      <nav className="site-nav" data-scrolled={scrolled} aria-label="Primary">
+        <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
+          <div className={`nav-shell ${scrolled ? 'glass-strong' : 'glass'}`}>
+            <a
+              href="#home"
+              onClick={(event) => { event.preventDefault(); go('home'); }}
+              className="flex flex-none items-center gap-2.5"
+              aria-label="Go to top"
             >
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center font-display font-bold text-navy-deep text-xs shadow-sm group-hover:scale-105 transition-transform">
-                MP
-              </div>
-              <span className="hidden sm:inline font-display font-bold text-xs sm:text-sm tracking-tight">MAYANK PAWAR</span>
-            </button>
+              <span className="monogram" aria-hidden="true">
+                {data.profile.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}
+              </span>
+              <span className="hidden font-display text-[13px] font-bold tracking-tight text-[var(--ink)] sm:inline">
+                {data.profile.name}
+              </span>
+            </a>
 
-            {/* Desktop nav */}
-            <div className="hidden lg:flex items-center gap-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleClick(item.id)}
+            <ul ref={listRef} className="relative ml-2 hidden items-center gap-0.5 lg:flex">
+              {primary.map((item) => (
+                <li key={item.id}>
+                  <a
+                    href={`#${item.id}`}
+                    onClick={(event) => { event.preventDefault(); go(item.id); }}
                     onMouseEnter={() => sounds.hover()}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all relative
-                      ${activeSection === item.id ? 'text-cyan-300' : 'text-white/60 hover:text-white'}
-                    `}
+                    className="nav-link"
+                    aria-current={activeSection === item.id ? 'true' : undefined}
                   >
-                    <Icon size={15} strokeWidth={1.8} aria-hidden="true" />
                     {item.label}
-                    {activeSection === item.id && (
-                      <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+                  </a>
+                </li>
+              ))}
+              <span ref={indicatorRef} aria-hidden="true" className="nav-indicator" style={{ opacity: 0 }} />
+            </ul>
 
-            <div className="relative min-w-0 flex-1 sm:max-w-xs lg:mx-2">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" aria-hidden="true" />
+            {overflow.length > 0 && (
+              <div className="relative hidden lg:block">
+                <button
+                  type="button"
+                  onClick={() => { sounds.click(); setOverflowOpen((current) => !current); }}
+                  aria-expanded={overflowOpen}
+                  className="nav-link"
+                >
+                  More
+                </button>
+                {overflowOpen && (
+                  <ul className="absolute left-0 top-full z-10 mt-2 w-48 overflow-hidden rounded-card border border-[var(--line)] bg-[var(--surface)] p-1.5 shadow-[0_14px_36px_-18px_rgba(12,12,17,0.4)]">
+                    {overflow.map((item) => (
+                      <li key={item.id}>
+                        <a
+                          href={`#${item.id}`}
+                          onClick={(event) => { event.preventDefault(); go(item.id); }}
+                          className="block rounded-lg px-3 py-2 text-[13px] text-[var(--muted)] transition-colors duration-[--dur-hover] hover:bg-[var(--surface-2)] hover:text-[var(--ink)]"
+                        >
+                          {item.label}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            <div ref={searchWrapRef} className="relative ml-auto min-w-0 flex-1 sm:max-w-[15rem] lg:ml-3">
+              <label htmlFor="site-search" className="sr-only">Search this site</label>
+              <Search
+                size={14}
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--faint)]"
+              />
               <input
+                id="site-search"
                 type="search"
                 value={query}
                 onFocus={() => setResultsOpen(true)}
@@ -110,100 +201,142 @@ export default function Navigation({ onNavigate, data, onSearchSelect, activeSec
                 onKeyDown={(event) => {
                   if (event.key === 'Escape') { setResultsOpen(false); setQuery(''); }
                   if (event.key === 'Enter' && results[0]) {
+                    event.preventDefault();
                     onSearchSelect(results[0]);
                     setResultsOpen(false);
                     setQuery('');
                   }
                 }}
-                placeholder="Search portfolio..."
-                aria-label="Search portfolio content"
+                placeholder="Search…"
                 aria-expanded={resultsOpen && Boolean(query.trim())}
-                className="premium-input w-full rounded-xl py-2 pl-9 pr-9 text-xs sm:text-sm"
+                aria-controls="site-search-results"
+                className="field h-9 w-full py-1.5 pl-8 pr-8 text-[13px]"
               />
               {query && (
                 <button
                   type="button"
                   onClick={() => { setQuery(''); setResultsOpen(false); sounds.click(); }}
-                  className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-slate-900"
-                  aria-label="Clear search"
+                  className="absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-[var(--faint)] transition-colors hover:text-[var(--ink)]"
                   title="Clear search"
                 >
-                  <X size={15} aria-hidden="true" />
+                  <X size={14} aria-hidden="true" />
+                  <span className="sr-only">Clear search</span>
                 </button>
               )}
               {resultsOpen && query.trim() && (
-                <>
-                  <button className="fixed inset-0 z-[1000] cursor-default" aria-label="Close search results" onClick={() => setResultsOpen(false)} />
-                  <div className="ios-scroll absolute right-0 top-full z-[1001] mt-2 max-h-[60vh] w-[min(90vw,24rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
-                    {results.length === 0 ? (
-                      <p className="px-3 py-5 text-center text-sm text-slate-500">No matching portfolio content.</p>
-                    ) : results.map((result) => (
+                <div
+                  id="site-search-results"
+                  className="scroll-y absolute right-0 top-full z-10 mt-2 max-h-[60vh] w-[min(24rem,90vw)] overflow-y-auto rounded-card border border-[var(--line)] bg-[var(--surface)] p-1.5 shadow-[0_14px_36px_-18px_rgba(12,12,17,0.4)]"
+                >
+                  {results.length === 0 ? (
+                    <p className="px-3 py-5 text-center text-[13px] text-[var(--muted)]">
+                      Nothing matches “{query.trim()}”.
+                    </p>
+                  ) : (
+                    results.map((result) => (
                       <button
                         type="button"
                         key={`${result.kind}-${result.id}`}
                         onClick={() => {
+                          sounds.click();
                           onSearchSelect(result);
                           setResultsOpen(false);
                           setQuery('');
                         }}
-                        className="block w-full rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-slate-100 focus-visible:bg-slate-100"
+                        onMouseEnter={() => sounds.hover()}
+                        className="block w-full rounded-lg px-3 py-2 text-left transition-colors duration-[--dur-hover] hover:bg-[var(--surface-2)]"
                       >
-                        <span className="block truncate text-sm font-semibold text-slate-900">{result.title}</span>
-                        <span className="mt-0.5 block truncate text-xs text-slate-500">{result.detail}</span>
+                        <span className="block truncate text-[13px] font-semibold text-[var(--ink)]">{result.title}</span>
+                        <span className="mt-0.5 block truncate text-[11px] text-[var(--muted)]">{result.detail}</span>
                       </button>
-                    ))}
-                  </div>
-                </>
+                    ))
+                  )}
+                </div>
               )}
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-none items-center gap-1.5">
+              {soundAllowed && (
+                <button
+                  type="button"
+                  onClick={() => { sounds.click(); onToggleSound(); }}
+                  aria-pressed={soundOn}
+                  title={soundOn ? 'Mute sounds' : 'Enable sounds'}
+                  className="btn-icon h-9 w-9 min-h-0"
+                >
+                  {soundOn ? <Volume2 size={15} aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}
+                  <span className="sr-only">{soundOn ? 'Mute sounds' : 'Enable sounds'}</span>
+                </button>
+              )}
               <button
-                onClick={() => { sounds.click(); onToggleSound(); }}
-                onMouseEnter={() => sounds.hover()}
-                className="w-9 h-9 rounded-xl glass flex items-center justify-center text-white/60 hover:text-cyan-300 transition-colors"
-                title={soundOn ? 'Mute sounds' : 'Enable sounds'}
+                type="button"
+                onClick={() => { sounds.click(); setDrawerOpen(true); }}
+                aria-expanded={drawerOpen}
+                aria-label="Open navigation menu"
+                className="btn-icon h-9 w-9 min-h-0 lg:hidden"
               >
-                {soundOn ? '🔊' : '🔇'}
-              </button>
-              {/* Mobile toggle */}
-              <button
-                onClick={() => { sounds.toggle(); setMobileOpen(!mobileOpen); }}
-                className="lg:hidden w-9 h-9 rounded-xl glass flex items-center justify-center text-white/70"
-              >
-                {mobileOpen ? '✕' : '☰'}
+                <Menu size={17} aria-hidden="true" />
               </button>
             </div>
           </div>
         </div>
       </nav>
 
-      {/* Mobile menu */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-[999] lg:hidden" onClick={() => setMobileOpen(false)}>
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-fade-in" />
-          <div className="relative pt-24 px-4 animate-slide-right">
-            <div className="glass-strong rounded-2xl p-4 space-y-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => handleClick(item.id)}
-                    className={`flex w-full items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all
-                      ${activeSection === item.id ? 'bg-cyan-500/15 text-cyan-300' : 'text-white/70 hover:bg-white/5'}
-                    `}
-                  >
-                    <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
+      {/* Mobile drawer. A real dialog: focus-trapped, Escape-consumable, and
+          the background goes inert, which it did not before. */}
+      <Overlay
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        label="Site navigation"
+        variant="sheet"
+        panelClassName="mt-auto max-h-[80dvh] rounded-b-none sm:mt-auto sm:max-w-sm"
+        showClose={false}
+      >
+        <div ref={drawerRef} className="relative z-10 flex flex-col">
+          <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
+            <p className="font-display text-sm font-bold tracking-tight text-[var(--ink)]">Navigate</p>
+            <button
+              type="button"
+              onClick={() => setDrawerOpen(false)}
+              className="btn-icon h-8 w-8 min-h-0"
+              title="Close menu"
+            >
+              <X size={15} aria-hidden="true" />
+              <span className="sr-only">Close navigation menu</span>
+            </button>
           </div>
+          <nav aria-label="Mobile" className="scroll-y px-3 py-3">
+            <ul className="space-y-0.5">
+              <li>
+                <a
+                  href="#home"
+                  onClick={(event) => { event.preventDefault(); go('home'); }}
+                  className={cls(
+                    'flex items-center rounded-card px-4 py-3 text-sm font-medium transition-colors duration-[--dur-hover]',
+                    activeSection === 'home' ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--ink-2)] hover:bg-[var(--surface-2)]',
+                  )}
+                >
+                  Home
+                </a>
+              </li>
+              {navItems.map((item) => (
+                <li key={item.id}>
+                  <a
+                    href={`#${item.id}`}
+                    onClick={(event) => { event.preventDefault(); go(item.id); }}
+                    className={cls(
+                      'flex items-center rounded-card px-4 py-3 text-sm font-medium transition-colors duration-[--dur-hover]',
+                      activeSection === item.id ? 'bg-[var(--accent-soft)] text-[var(--accent)]' : 'text-[var(--ink-2)] hover:bg-[var(--surface-2)]',
+                    )}
+                  >
+                    {item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </div>
-      )}
+      </Overlay>
     </>
   );
 }

@@ -1,325 +1,456 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pause, Play, RotateCcw } from 'lucide-react';
 import { sounds } from '@/lib/sound';
+import type { GameProps } from './registry';
+
+type Direction = 'up' | 'down' | 'left' | 'right';
+type Phase = 'ready' | 'running' | 'paused' | 'over';
 
 const GRID = 18;
 const CELL = 22;
 const SIZE = GRID * CELL;
-const START_SPEED = 150;
-const MIN_SPEED = 70;
 
-type Point = { x: number; y: number };
-type Direction = 'up' | 'down' | 'left' | 'right';
-
-const Deltas: Record<Direction, Point> = {
-  up: { x: 0, y: -1 },
-  down: { x: 0, y: 1 },
-  left: { x: -1, y: 0 },
-  right: { x: 1, y: 0 },
-};
-
-const opposite: Record<Direction, Direction> = {
+const OPPOSITE: Record<Direction, Direction> = {
   up: 'down', down: 'up', left: 'right', right: 'left',
 };
 
-const CONTROLS: { direction: Direction; label: string; className: string }[] = [
-  { direction: 'up', label: '↑', className: 'col-start-2 row-start-1' },
-  { direction: 'left', label: '←', className: 'col-start-1 row-start-2' },
-  { direction: 'down', label: '↓', className: 'col-start-2 row-start-2' },
-  { direction: 'right', label: '→', className: 'col-start-3 row-start-2' },
+const DIFFICULTIES: {
+  id: 'relaxed' | 'classic' | 'fast';
+  label: string;
+  start: number;
+  floor: number;
+  decay: number;
+}[] = [
+  { id: 'relaxed', label: 'Relaxed', start: 210, floor: 120, decay: 2 },
+  { id: 'classic', label: 'Classic', start: 150, floor: 80, decay: 4 },
+  { id: 'fast', label: 'Fast', start: 105, floor: 55, decay: 6 },
 ];
 
-const KEY_MAP: Record<string, Direction> = {
-  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
-  w: 'up', s: 'down', a: 'left', d: 'right',
-  W: 'up', S: 'down', A: 'left', D: 'right',
-};
+const BEST_KEY = 'portfolio_snake_best';
 
-const START_SNAKE: Point[] = [
-  { x: 8, y: 9 },
-  { x: 7, y: 9 },
-  { x: 6, y: 9 },
-];
+interface Point { x: number; y: number }
 
-function randomFood(snake: Point[]): Point {
-  const open: Point[] = [];
-  for (let y = 0; y < GRID; y += 1) {
-    for (let x = 0; x < GRID; x += 1) {
-      if (!snake.some((part) => part.x === x && part.y === y)) open.push({ x, y });
-    }
+function readBest(): number {
+  try {
+    const raw = localStorage.getItem(BEST_KEY);
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
   }
-  return open.length > 0 ? open[Math.floor(Math.random() * open.length)] : { x: 0, y: 0 };
 }
 
-function paintBoard(
-  canvas: HTMLCanvasElement | null,
-  snake: Point[],
-  food: Point,
-) {
-  const ctx = canvas?.getContext('2d');
-  if (!ctx) return;
-
-  ctx.clearRect(0, 0, SIZE, SIZE);
-  ctx.fillStyle = 'rgba(0, 113, 227, 0.03)';
-  ctx.fillRect(0, 0, SIZE, SIZE);
-
-  ctx.strokeStyle = 'rgba(29, 29, 31, 0.05)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let i = 1; i < GRID; i += 1) {
-    ctx.moveTo(i * CELL + 0.5, 0);
-    ctx.lineTo(i * CELL + 0.5, SIZE);
-    ctx.moveTo(0, i * CELL + 0.5);
-    ctx.lineTo(SIZE, i * CELL + 0.5);
-  }
-  ctx.stroke();
-
-  ctx.fillStyle = '#a34553';
-  ctx.beginPath();
-  ctx.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL * 0.3, 0, Math.PI * 2);
-  ctx.fill();
-
-  snake.forEach((part, index) => {
-    const inset = index === 0 ? 2.5 : 4;
-    const gradient = ctx.createLinearGradient(
-      part.x * CELL, part.y * CELL, (part.x + 1) * CELL, (part.y + 1) * CELL
-    );
-    gradient.addColorStop(0, index === 0 ? '#147c8a' : 'rgba(20, 124, 138, 0.55)');
-    gradient.addColorStop(1, index === 0 ? '#0071e3' : 'rgba(0, 113, 227, 0.35)');
-    ctx.fillStyle = gradient;
-    // `roundRect` is recent; fall back to a square on older engines.
-    if (typeof ctx.roundRect === 'function') {
-      ctx.beginPath();
-      ctx.roundRect(part.x * CELL + inset, part.y * CELL + inset, CELL - inset * 2, CELL - inset * 2, 7);
-      ctx.fill();
-    } else {
-      ctx.fillRect(part.x * CELL + inset, part.y * CELL + inset, CELL - inset * 2, CELL - inset * 2);
-    }
-  });
+function writeBest(score: number) {
+  try { localStorage.setItem(BEST_KEY, String(score)); } catch { /* private mode */ }
 }
 
-/**
- * Snake on a single canvas: the loop never re-renders React, it only redraws
- * pixels. It pauses itself when scrolled out of view or when the tab is hidden.
- */
-export default function Snake() {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const directionRef = useRef<Direction>('right');
-  const pendingRef = useRef<Direction>('right');
-  const snakeRef = useRef<Point[]>(START_SNAKE);
-  const foodRef = useRef<Point>(randomFood(START_SNAKE));
-  const runningRef = useRef(false);
-  const scoreRef = useRef(0);
-  const startedRef = useRef(false);
-  const activeRef = useRef(false);
-  const overRef = useRef(false);
-  const lastStepRef = useRef(0);
-  const frameRef = useRef(0);
-
+export default function Snake({ onScore }: GameProps) {
+  const [difficulty, setDifficulty] = useState<'relaxed' | 'classic' | 'fast'>('classic');
+  const [phase, setPhase] = useState<Phase>('ready');
   const [score, setScore] = useState(0);
   const [best, setBest] = useState(0);
-  const [over, setOver] = useState(false);
-  const [started, setStarted] = useState(false);
-  const [active, setActive] = useState(false);
 
-  scoreRef.current = score;
-  startedRef.current = started;
-  activeRef.current = active;
-  overRef.current = over;
-  const speed = Math.max(MIN_SPEED, START_SPEED - score * 4);
-  const status = over ? 'Game over' : !started ? 'Ready when you are' : active ? 'Running' : 'Paused';
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
+
+  const snakeRef = useRef<Point[]>([]);
+  const foodRef = useRef<Point>({ x: 0, y: 0 });
+  const directionRef = useRef<Direction>('right');
+  const queuedRef = useRef<Direction>('right');
+  const runningRef = useRef(false);
+  const scoreRef = useRef(0);
+  const lastStepRef = useRef(0);
+  const speedRef = useRef(150);
+  const bestRef = useRef(0);
+
+  const config = DIFFICULTIES.find((entry) => entry.id === difficulty) ?? DIFFICULTIES[1];
+
+  const reset = useCallback(() => {
+    const middle = Math.floor(GRID / 2);
+    snakeRef.current = [
+      { x: middle - 1, y: middle },
+      { x: middle - 2, y: middle },
+      { x: middle - 3, y: middle },
+    ];
+    directionRef.current = 'right';
+    queuedRef.current = 'right';
+    scoreRef.current = 0;
+    speedRef.current = config.start;
+    setScore(0);
+    placeFood();
+    setPhase('ready');
+    runningRef.current = false;
+    paint();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.start]);
+
+  const placeFood = () => {
+    const occupied = new Set(snakeRef.current.map((cell) => cell.y * GRID + cell.x));
+    const free: number[] = [];
+    for (let i = 0; i < GRID * GRID; i += 1) if (!occupied.has(i)) free.push(i);
+    const pick = free.length > 0 ? free[Math.floor(Math.random() * free.length)] : 0;
+    foodRef.current = { x: pick % GRID, y: Math.floor(pick / GRID) };
+  };
+
+  const paint = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Match the backing store to the device so the board is not blurry on
+    // retina while the CSS size stays responsive.
+    if (canvas.width !== SIZE * dpr) {
+      canvas.width = SIZE * dpr;
+      canvas.height = SIZE * dpr;
+    }
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    context.clearRect(0, 0, SIZE, SIZE);
+
+    context.fillStyle = 'rgba(16,18,25,0.022)';
+    context.fillRect(0, 0, SIZE, SIZE);
+
+    context.strokeStyle = 'rgba(16,18,25,0.05)';
+    context.lineWidth = 1;
+    for (let i = 1; i < GRID; i += 1) {
+      context.beginPath();
+      context.moveTo(i * CELL, 0);
+      context.lineTo(i * CELL, SIZE);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(0, i * CELL);
+      context.lineTo(SIZE, i * CELL);
+      context.stroke();
+    }
+
+    const food = foodRef.current;
+    const foodGradient = context.createRadialGradient(
+      food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, 1,
+      food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL,
+    );
+    foodGradient.addColorStop(0, '#fd8e77');
+    foodGradient.addColorStop(1, '#c03a26');
+    context.fillStyle = foodGradient;
+    context.beginPath();
+    context.arc(food.x * CELL + CELL / 2, food.y * CELL + CELL / 2, CELL * 0.34, 0, Math.PI * 2);
+    context.fill();
+
+    snakeRef.current.forEach((segment, index) => {
+      const ratio = 1 - index / Math.max(snakeRef.current.length, 1);
+      const gradient = context.createLinearGradient(
+        segment.x * CELL, segment.y * CELL,
+        segment.x * CELL + CELL, segment.y * CELL + CELL,
+      );
+      gradient.addColorStop(0, index === 0 ? '#0c6899' : '#12a2de');
+      gradient.addColorStop(1, index === 0 ? '#10567c' : '#0a82bd');
+      context.fillStyle = gradient;
+      context.globalAlpha = 0.55 + ratio * 0.45;
+      roundRect(context, segment.x * CELL + 2, segment.y * CELL + 2, CELL - 4, CELL - 4, 5);
+      context.fill();
+    });
+    context.globalAlpha = 1;
+  }, []);
 
   const endGame = useCallback(() => {
     runningRef.current = false;
-    setOver(true);
-    setActive(false);
-    setBest((current) => Math.max(current, scoreRef.current));
+    setPhase('over');
     sounds.error();
-  }, []);
-
-  const tick = useCallback(() => {
-    const snake = snakeRef.current;
-    directionRef.current = pendingRef.current;
-    const delta = Deltas[directionRef.current];
-    const head = { x: snake[0].x + delta.x, y: snake[0].y + delta.y };
-
-    const eating = head.x === foodRef.current.x && head.y === foodRef.current.y;
-    const body = eating ? snake : snake.slice(0, -1);
-    const dead = head.x < 0 || head.y < 0 || head.x >= GRID || head.y >= GRID
-      || body.some((part) => part.x === head.x && part.y === head.y);
-    if (dead) {
-      endGame();
-      return;
+    const final = scoreRef.current;
+    if (final > bestRef.current) {
+      bestRef.current = final;
+      setBest(final);
+      writeBest(final);
     }
+    onScore?.(final);
+  }, [onScore]);
 
-    const nextSnake = [head, ...snake];
+  const step = useCallback(() => {
+    const direction = queuedRef.current;
+    if (direction !== OPPOSITE[directionRef.current]) directionRef.current = direction;
+
+    const head = snakeRef.current[0];
+    const next: Point = { x: head.x, y: head.y };
+    if (directionRef.current === 'up') next.y -= 1;
+    if (directionRef.current === 'down') next.y += 1;
+    if (directionRef.current === 'left') next.x -= 1;
+    if (directionRef.current === 'right') next.x += 1;
+
+    if (next.x < 0 || next.y < 0 || next.x >= GRID || next.y >= GRID) { endGame(); return; }
+
+    const eating = next.x === foodRef.current.x && next.y === foodRef.current.y;
+    // Moving into the cell the tail is vacating this tick is legal.
+    const body = eating ? snakeRef.current : snakeRef.current.slice(0, -1);
+    if (body.some((segment) => segment.x === next.x && segment.y === next.y)) { endGame(); return; }
+
+    snakeRef.current = [next, ...snakeRef.current];
     if (eating) {
-      foodRef.current = randomFood(nextSnake);
       scoreRef.current += 1;
       setScore(scoreRef.current);
-      sounds.click();
+      // Read from a ref, not state: the loop must not be torn down and rebuilt
+      // every time a pellet is eaten.
+      speedRef.current = Math.max(config.floor, config.start - scoreRef.current * config.decay);
+      placeFood();
+      sounds.success();
     } else {
-      nextSnake.pop();
+      snakeRef.current.pop();
     }
-    snakeRef.current = nextSnake;
-  }, [endGame]);
+  }, [config.decay, config.floor, config.start, endGame]);
 
-  // One rAF loop for the whole app session; it only advances the game while
-  // `runningRef` is true, and always repaints (cheap) so the board is never blank.
+  // One rAF loop for the whole session. It reads `speedRef` every frame, so
+  // changing speed never tears the effect down.
   useEffect(() => {
+    let frame = 0;
     const loop = (timestamp: number) => {
-      frameRef.current = requestAnimationFrame(loop);
-      if (runningRef.current && timestamp - lastStepRef.current >= speed) {
+      if (runningRef.current && timestamp - lastStepRef.current >= speedRef.current) {
         lastStepRef.current = timestamp;
-        tick();
+        step();
       }
-      paintBoard(canvasRef.current, snakeRef.current, foodRef.current);
+      paint();
+      frame = requestAnimationFrame(loop);
     };
-    frameRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frameRef.current);
-  }, [speed, tick]);
+    frame = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(frame);
+  }, [step, paint]);
 
-  // Only burn frames while the game is actually on screen.
+  // Auto-pause when the board is off-screen or the tab is hidden, so a game is
+  // never lost to a background tab.
   useEffect(() => {
-    const element = containerRef.current;
-    if (!element || typeof IntersectionObserver === 'undefined') {
-      runningRef.current = started && !over;
-      setActive(started && !over);
-      return;
-    }
+    const board = boardRef.current;
+    if (!board || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(([entry]) => {
-      if (over || !startedRef.current) {
+      if (entry.isIntersecting) return;
+      if (phase === 'running') {
         runningRef.current = false;
-        setActive(false);
-        return;
+        setPhase('paused');
       }
-      runningRef.current = entry.isIntersecting;
-      if (entry.isIntersecting) lastStepRef.current = performance.now();
-      setActive(entry.isIntersecting);
     }, { threshold: 0.15 });
-    observer.observe(element);
+    observer.observe(board);
     return () => observer.disconnect();
-  }, [over, started]);
+  }, [phase]);
 
   useEffect(() => {
     const onVisibility = () => {
-      if (document.hidden) runningRef.current = false;
-      else if (startedRef.current && !overRef.current) runningRef.current = activeRef.current;
+      if (document.hidden && phase === 'running') {
+        runningRef.current = false;
+        setPhase('paused');
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [phase]);
+
+  useEffect(() => {
+    bestRef.current = readBest();
+    setBest(bestRef.current);
+    reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (over || !started) runningRef.current = false;
-  }, [over, started]);
+    reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [difficulty]);
 
-  const start = useCallback((initialDirection?: Direction) => {
-    // A snake heading left would start nose-first into a wall, so flip it.
-    const heading = initialDirection === 'left' ? 'right' : initialDirection ?? 'right';
-    snakeRef.current = START_SNAKE;
-    foodRef.current = randomFood(START_SNAKE);
-    directionRef.current = heading;
-    pendingRef.current = heading;
-    scoreRef.current = 0;
-    lastStepRef.current = performance.now();
-    setScore(0);
-    setOver(false);
-    setStarted(true);
+  const start = () => {
+    if (phase === 'over') { reset(); }
+    if (phase === 'ready' || phase === 'over') lastStepRef.current = performance.now();
     runningRef.current = true;
-    setActive(true);
-    sounds.toggle();
-  }, []);
-
-  const steer = useCallback((next: Direction) => {
-    if (!started || over) {
-      start(next);
-      return;
-    }
-    if (next !== opposite[directionRef.current]) pendingRef.current = next;
-  }, [over, start, started]);
-
-  // Keys are only captured while the board has focus, so arrow keys still
-  // scroll the page everywhere else.
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const next = KEY_MAP[event.key];
-    if (!next) return;
-    event.preventDefault();
-    steer(next);
-    containerRef.current?.focus();
+    setPhase('running');
+    sounds.click();
   };
 
+  const togglePause = () => {
+    if (phase === 'running') {
+      runningRef.current = false;
+      setPhase('paused');
+      sounds.click();
+      return;
+    }
+    if (phase === 'paused') {
+      lastStepRef.current = performance.now();
+      runningRef.current = true;
+      setPhase('running');
+      sounds.click();
+    }
+  };
+
+  const steer = (direction: Direction) => {
+    if (phase === 'over') {
+      // Explicit start only. Previously any arrow press after a game over
+      // silently restarted it, bypassing the Play again button.
+      reset();
+      lastStepRef.current = performance.now();
+      runningRef.current = true;
+      setPhase('running');
+      sounds.click();
+      return;
+    }
+    if (phase === 'ready') { start(); }
+    queuedRef.current = direction;
+    sounds.click();
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    const map: Record<string, Direction> = {
+      ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
+      w: 'up', s: 'down', a: 'left', d: 'right',
+      W: 'up', S: 'down', A: 'left', D: 'right',
+    };
+    const direction = map[event.key];
+    if (!direction) return;
+    event.preventDefault();
+    steer(direction);
+    // Deliberately does NOT re-focus the container: the old implementation did,
+    // which yanked focus off the D-pad button just pressed and killed its
+    // focus ring.
+  };
+
+  const statusText = phase === 'ready' ? 'Ready when you are'
+    : phase === 'running' ? 'Running'
+      : phase === 'paused' ? 'Paused'
+        : 'Game over';
+
   return (
-    <div
-      ref={containerRef}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      onPointerDown={() => containerRef.current?.focus()}
-      className="flex flex-col items-center gap-4 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40"
-    >
-      <div className="flex w-full max-w-sm items-center justify-between px-1 text-xs font-medium text-slate-600">
-        <span>Score <span className="font-mono text-cyan-700">{score}</span></span>
-        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] text-slate-500">{status}</span>
-        <span>Best <span className="font-mono text-violet-700">{best}</span></span>
-      </div>
-
-      <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/70 bg-white/85 p-3 shadow-[0_10px_30px_rgba(29,29,31,0.08)]">
-        <canvas
-          ref={canvasRef}
-          width={SIZE}
-          height={SIZE}
-          role="img"
-          aria-label="Snake game board"
-          className="h-auto w-full rounded-2xl"
-        />
-
-        {/* Nothing runs until the visitor starts: an auto-playing snake eats a
-            wall in under two seconds and reads as a broken widget. */}
-        {!started && !over && (
-          <div className="absolute inset-3 flex flex-col items-center justify-center gap-3 rounded-2xl bg-white/85 backdrop-blur-sm">
-            <p className="px-4 text-center text-sm text-slate-600">Eat the dots. Avoid the wall. Avoid the wall.</p>
-            <button
-              type="button"
-              onClick={() => start()}
-              className="btn-premium rounded-xl px-6 py-2.5 text-sm font-semibold text-slate-700"
-            >
-              Start
+    <div className="card card-sheen w-full max-w-lg rounded-panel p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-display text-base font-bold tracking-tight text-[var(--ink)]">Snake</h3>
+          <p className="text-xs text-[var(--muted)]">Arrow keys or WASD. Best run: {best}</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {phase === 'running' && (
+            <button type="button" onClick={togglePause} onMouseEnter={() => sounds.hover()} className="btn btn-ghost h-9 min-h-0 px-3 text-xs">
+              <Pause size={13} aria-hidden="true" /> Pause
             </button>
-          </div>
-        )}
-
-        {over && (
-          <div className="mt-3 flex flex-col items-center gap-2">
-            <p className="text-center text-sm font-medium text-slate-600">
-              {score > 0 && score >= best ? 'New personal best. Annoyingly good.' : `Final score: ${score}`}
-            </p>
-            <button
-              type="button"
-              onClick={() => start()}
-              className="btn-premium w-full rounded-xl py-2.5 text-sm font-semibold text-slate-700"
-            >
-              Play again
+          )}
+          {phase === 'paused' && (
+            <button type="button" onClick={togglePause} onMouseEnter={() => sounds.hover()} className="btn btn-ghost h-9 min-h-0 px-3 text-xs">
+              <Play size={13} aria-hidden="true" /> Resume
             </button>
-          </div>
-        )}
-      </div>
-
-      <div className="grid w-full max-w-[13rem] grid-cols-3 gap-2">
-        {CONTROLS.map((control) => (
-          <button
-            key={control.direction}
-            type="button"
-            onClick={() => steer(control.direction)}
-            aria-label={`Move ${control.direction}`}
-            className={`${control.className} flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white/85 text-lg text-slate-600 transition-colors hover:border-cyan-300 hover:text-cyan-700 active:scale-95`}
-          >
-            {control.label}
+          )}
+          <button type="button" onClick={reset} onMouseEnter={() => sounds.hover()} className="btn btn-ghost h-9 min-h-0 px-3 text-xs">
+            <RotateCcw size={13} aria-hidden="true" /> Restart
           </button>
-        ))}
+        </div>
       </div>
-      <p className="max-w-sm text-center text-xs text-slate-500">
-        Start the run, then steer with the pad, the arrow keys or WASD. Walls are solid, unlike most relationships.
-      </p>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1" role="group" aria-label="Difficulty">
+          {DIFFICULTIES.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              aria-pressed={difficulty === entry.id}
+              onClick={() => { sounds.click(); setDifficulty(entry.id); }}
+              className="filter-pill"
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+        <p role="status" aria-live="polite" className="font-display text-2xl font-bold tracking-tight text-[var(--accent)]">
+          {score}
+        </p>
+      </div>
+
+      <div ref={boardRef} className="relative mx-auto mt-4 w-full max-w-[22rem]">
+        <div
+          onKeyDown={onKeyDown}
+          tabIndex={0}
+          role="application"
+          aria-label="Snake board. Use the arrow keys or WASD to steer."
+          className="rounded-panel outline-offset-4"
+        >
+          <canvas
+            ref={canvasRef}
+            width={SIZE}
+            height={SIZE}
+            style={{ width: '100%', height: 'auto', display: 'block' }}
+            className="w-full rounded-panel border border-[var(--line)] bg-[var(--surface)]"
+            role="img"
+            aria-label={`Snake board. Score ${score}. ${statusText}.`}
+          />
+        </div>
+
+        {phase !== 'running' && (
+          <div className="absolute inset-0 grid place-items-center rounded-panel bg-[rgba(255,255,255,0.82)] backdrop-blur-sm">
+            <div className="px-6 text-center">
+              <p className="font-display text-base font-bold text-[var(--ink)]">
+                {phase === 'over' ? `Game over — ${score}` : phase === 'paused' ? 'Paused' : 'Snake'}
+              </p>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                {phase === 'over' ? 'Press Restart or an arrow key.' : 'Press start, then steer.'}
+              </p>
+              <button type="button" onClick={start} onMouseEnter={() => sounds.hover()} className="btn btn-primary mt-4 h-9 min-h-0 px-4 text-xs">
+                {phase === 'over' ? 'Play again' : phase === 'paused' ? 'Resume' : 'Start'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Touch controls. Real buttons so they are keyboard-reachable too; the
+          on-screen arrow keys are not a pointer-only affordance. */}
+      <div className="mx-auto mt-4 grid max-w-[16rem] grid-cols-3 gap-1.5">
+        <span />
+        <button
+          type="button"
+          onClick={() => steer('up')}
+          onMouseEnter={() => sounds.hover()}
+          className="btn-icon mx-auto"
+          aria-label="Move up"
+        >
+          ▲
+        </button>
+        <span />
+        <button
+          type="button"
+          onClick={() => steer('left')}
+          onMouseEnter={() => sounds.hover()}
+          className="btn-icon mx-auto"
+          aria-label="Move left"
+        >
+          ◀
+        </button>
+        <button
+          type="button"
+          onClick={() => steer('down')}
+          onMouseEnter={() => sounds.hover()}
+          className="btn-icon mx-auto"
+          aria-label="Move down"
+        >
+          ▼
+        </button>
+        <button
+          type="button"
+          onClick={() => steer('right')}
+          onMouseEnter={() => sounds.hover()}
+          className="btn-icon mx-auto"
+          aria-label="Move right"
+        >
+          ▶
+        </button>
+      </div>
     </div>
   );
+}
+
+function roundRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  if (typeof context.roundRect === 'function') {
+    context.beginPath();
+    context.roundRect(x, y, width, height, radius);
+    return;
+  }
+  // Safari < 16 has no roundRect; fall back to a plain rect rather than crash.
+  context.beginPath();
+  context.rect(x, y, width, height);
 }

@@ -1,109 +1,143 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Award, BookOpen, Camera, Mic, Star, Trophy } from 'lucide-react';
+import Section, { EmptyState } from '@/components/Section';
+import { RevealGroup } from '@/components/Reveal';
 import { sounds } from '@/lib/sound';
 import { formatDate } from '@/lib/utils';
 import type { Achievement } from '@/lib/types';
 
 interface AchievementsProps {
-  achievements: Achievement[];
+  items: Achievement[];
   searchTarget?: string | null;
 }
 
-const NODE_COLORS = ['timeline-node', 'timeline-node-purple', 'timeline-node-rose'];
-const ICON_COLORS: Record<string, string> = {
-  Writing: 'text-cyan-300',
-  Publishing: 'text-violet-300',
-  Speaking: 'text-amber-300',
-  Technology: 'text-emerald-300',
-  Photography: 'text-rose-300',
+/** Icon and accent are chosen by category so a new entry needs no styling. */
+const CATEGORY_META: Record<string, { icon: typeof Award; accent: string }> = {
+  Writing: { icon: BookOpen, accent: 'var(--accent)' },
+  Publishing: { icon: BookOpen, accent: 'var(--iris)' },
+  Speaking: { icon: Mic, accent: 'var(--ember)' },
+  Technology: { icon: Trophy, accent: 'var(--jade)' },
+  Photography: { icon: Camera, accent: 'var(--iris)' },
+  Education: { icon: Award, accent: 'var(--accent)' },
 };
 
-const ACHIEVEMENT_ICONS: Record<string, string> = {
-  Award: '🏆',
-  BookOpen: '📖',
-  Mic: '🎤',
-  Trophy: '⭐',
-  Camera: '📷',
-  Certificate: '📜',
-};
+const FALLBACK = { icon: Award, accent: 'var(--accent)' };
 
-export default function Achievements({ achievements, searchTarget }: AchievementsProps) {
+export default function AchievementsSection({ items, searchTarget }: AchievementsProps) {
+  const [category, setCategory] = useState('all');
+
+  const visible = useMemo(() => {
+    return items
+      .filter((item) => item.visible !== false)
+      .sort((a, b) => Number(b.featured === true) - Number(a.featured === true)
+        || b.date.localeCompare(a.date));
+  }, [items]);
+
+  const categories = useMemo(
+    () => [...new Set(visible.map((item) => item.category).filter(Boolean))],
+    [visible],
+  );
+
+  const displayed = category === 'all' ? visible : visible.filter((item) => item.category === category);
+
+  // A search hit deep-links to the specific achievement, not just the section.
   useEffect(() => {
     if (!searchTarget) return;
+    setCategory('all');
     const frame = requestAnimationFrame(() => {
-      document.getElementById(`search-target-achievement-${searchTarget}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById(`search-target-achievement-${searchTarget}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [searchTarget]);
-
-  const sorted = [...achievements].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [searchTarget, visible.length]);
 
   return (
-    <section id="achievements" className="section-shell px-4 sm:px-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-16 reveal gpu-layer">
-          <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Milestones</p>
-          <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Achievements</h2>
-          <div className="heading-line mx-auto mb-6" />
-          <p className="text-white/50 max-w-xl mx-auto text-sm">A timeline of moments worth remembering.</p>
+    <Section
+      id="achievements"
+      eyebrow="Milestones"
+      title="Achievements"
+      lede="Writing, building and speaking — the moments worth marking."
+      aside={categories.length > 1 ? (
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Filter achievements by category">
+          <button
+            type="button"
+            aria-pressed={category === 'all'}
+            onClick={() => { sounds.click(); setCategory('all'); }}
+            className="filter-pill"
+          >
+            All
+          </button>
+          {categories.map((entry) => (
+            <button
+              key={entry}
+              type="button"
+              aria-pressed={category === entry}
+              onClick={() => { sounds.click(); setCategory(entry); }}
+              className="filter-pill"
+            >
+              {entry}
+            </button>
+          ))}
         </div>
-
-        {/* Timeline */}
-        {sorted.length === 0 ? (
-          <div className="text-center py-20 text-white/40 text-sm">No achievements yet.</div>
-        ) : (
-          <div className="relative">
-            {/* Vertical line */}
-            <div className="absolute left-4 sm:left-1/2 top-0 bottom-0 w-0.5 bg-gradient-to-b from-cyan-400/30 via-violet-400/20 to-rose-400/10 sm:-translate-x-1/2" />
-
-            <div className="space-y-12">
-              {sorted.map((item, i) => {
-                const isLeft = i % 2 === 0;
-                const colorIdx = i % 3;
-                return (
-                  <div
-                    key={item.id}
-                    id={`search-target-achievement-${item.id}`}
-                    className={`reveal relative flex items-start gap-6 sm:gap-0 ${isLeft ? 'sm:flex-row' : 'sm:flex-row-reverse'}`}
-                    style={{ transitionDelay: `${i * 80}ms` }}
+      ) : undefined}
+    >
+      {visible.length === 0 ? (
+        <EmptyState
+          title="No achievements yet"
+          body="Awards, publications, talks and wins appear here as a timeline. Add them from Admin → Achievements."
+        />
+      ) : displayed.length === 0 ? (
+        <EmptyState title="Nothing in this category" body="Pick a different category to see the rest of the timeline." />
+      ) : (
+        <RevealGroup className="relative">
+          {/* The rail. Drawn once behind the whole list rather than per item,
+              so filtering never leaves a disconnected stub behind. */}
+          <span
+            aria-hidden="true"
+            className="absolute bottom-2 left-[15px] top-2 w-px bg-gradient-to-b from-[rgba(10,130,189,0.35)] via-[rgba(97,70,223,0.2)] to-transparent sm:left-[19px]"
+          />
+          <ol className="space-y-4">
+            {displayed.map((item) => {
+              const meta = CATEGORY_META[item.category] ?? FALLBACK;
+              const Icon = meta.icon;
+              return (
+                <li
+                  key={item.id}
+                  id={`search-target-achievement-${item.id}`}
+                  data-reveal-item
+                  className="relative pl-11 sm:pl-14"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-0 top-6 grid h-8 w-8 place-items-center rounded-full border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-2)] shadow-[0_2px_8px_-4px_rgba(12,12,17,0.28)] sm:h-10 sm:w-10"
                   >
-                    {/* Node */}
-                    <div className="absolute left-4 sm:left-1/2 top-6 -translate-x-1/2 z-10">
-                      <div className={`w-4 h-4 rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 ${NODE_COLORS[colorIdx]}`} />
+                    <Icon size={15} aria-hidden="true" />
+                  </span>
+                  <article className="card card-sheen rounded-panel p-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="chip" style={{ color: meta.accent, borderColor: 'var(--line)' }}>
+                        {item.category || 'Milestone'}
+                      </span>
+                      {item.featured && (
+                        <span className="chip chip-accent">
+                          <Star size={10} aria-hidden="true" /> Featured
+                        </span>
+                      )}
+                      <time dateTime={item.date} className="ml-auto text-[11px] text-[var(--faint)]">
+                        {formatDate(item.date)}
+                      </time>
                     </div>
-
-                    {/* Spacer for desktop alternating layout */}
-                    <div className="hidden sm:block sm:w-1/2" />
-
-                    {/* Card */}
-                    <div className={`flex-1 sm:w-1/2 pl-12 sm:pl-0 ${isLeft ? 'sm:pr-12' : 'sm:pl-12'}`}>
-                      <div
-                        className="glass-card rounded-2xl p-6 group cursor-default"
-                        data-cursor="hidden"
-                        onMouseEnter={() => sounds.hover()}
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <span className={`text-2xl ${ICON_COLORS[item.category] || 'text-cyan-300'}`}>
-                            {ACHIEVEMENT_ICONS[item.icon] || '🏆'}
-                          </span>
-                          <div>
-                            <span className="text-xs text-white/40 font-medium">{formatDate(item.date)}</span>
-                            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/50">
-                              {item.category}
-                            </span>
-                          </div>
-                        </div>
-                        <h3 className="font-display font-bold text-white/90 mb-2 leading-tight">{item.title}</h3>
-                        <p className="text-sm text-white/50 leading-relaxed">{item.description}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-    </section>
+                    <h3 className="mt-3 font-display text-[16px] font-bold leading-snug tracking-tight text-[var(--ink)]">
+                      {item.title}
+                    </h3>
+                    <p className="mt-1.5 text-[13.5px] leading-relaxed text-[var(--muted)]">{item.description}</p>
+                  </article>
+                </li>
+              );
+            })}
+          </ol>
+        </RevealGroup>
+      )}
+    </Section>
   );
 }

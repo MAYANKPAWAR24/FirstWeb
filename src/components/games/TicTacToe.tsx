@@ -1,140 +1,211 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { RotateCcw, Trophy } from 'lucide-react';
 import { sounds } from '@/lib/sound';
-import { useToast } from '@/lib/ToastContext';
+import {
+  chooseMove, emptyBoard, emptyIndexes, winnerOf, winningLines,
+  type Board, type BoardSize, type Difficulty, type Player,
+} from './engine';
+import type { GameProps } from './registry';
 
-type Cell = 'X' | 'O' | null;
-type Status = 'playing' | 'won' | 'draw';
-
-const LINES: [number, number, number][] = [
-  [0, 1, 2], [3, 4, 5], [6, 7, 8],
-  [0, 3, 6], [1, 4, 7], [2, 5, 8],
-  [0, 4, 8], [2, 4, 6],
+const SIZE_OPTIONS: BoardSize[] = [3, 4];
+const DIFFICULTIES: { id: Difficulty; label: string; hint: string }[] = [
+  { id: 'easy', label: 'Easy', hint: 'Plays well but slips now and then' },
+  { id: 'medium', label: 'Medium', hint: 'Blocks and forks, rarely the best move' },
+  { id: 'smart', label: 'Smart', hint: 'Unbeatable on 3×3' },
 ];
 
-function winnerOf(board: Cell[]): { winner: Exclude<Cell, null>; line: number[] } | null {
-  for (const [a, b, c] of LINES) {
-    if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-      return { winner: board[a] as Exclude<Cell, null>, line: [a, b, c] };
-    }
-  }
-  return null;
-}
+type Status = 'playing' | 'won' | 'lost' | 'draw';
 
-const EMPTY_BOARD: Cell[] = Array(9).fill(null);
-
-/**
- * Tic-Tac-Toe. You are X, "Muse" is O. No dependencies, no assets — the whole
- * game is three arrays and a line table.
- */
-export default function TicTacToe() {
-  const { notify } = useToast();
-  const [board, setBoard] = useState<Cell[]>(EMPTY_BOARD);
+export default function TicTacToe({ onScore }: GameProps) {
+  const [size, setSize] = useState<BoardSize>(3);
+  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [board, setBoard] = useState<Board>(() => emptyBoard(3));
   const [status, setStatus] = useState<Status>('playing');
-  const [highlight, setHighlight] = useState<number[]>([]);
-  const [scores, setScores] = useState({ you: 0, muse: 0, draws: 0 });
-  const announcedRef = useRef<Status>('playing');
+  const [score, setScore] = useState({ you: 0, ai: 0, draws: 0 });
 
-  const play = useCallback((index: number) => {
-    if (status !== 'playing' || board[index]) return;
-    sounds.click();
-    const next: Cell[] = [...board];
-    next[index] = 'X';
-    setBoard(next);
+  const lines = useMemo(() => winningLines(size), [size]);
+  const interactive = status === 'playing';
 
-    const opponent: Cell[] = [...next];
-    // Perfect play would be a cold demo; a small bias keeps it beatable and
-    // makes visitors feel clever instead of punished.
-    const open = opponent.map((cell, i) => (cell ? -1 : i)).filter((i) => i >= 0);
-    if (open.length > 0) {
-      opponent[open[Math.floor(Math.random() * open.length)]] = 'O';
-    }
-
-    const result = winnerOf(opponent);
-    const finished = Boolean(result) || opponent.every(Boolean);
-    setBoard(opponent);
-    setHighlight(result ? result.line : []);
-    setStatus(result ? 'won' : finished ? 'draw' : 'playing');
-    if (result) setScores((current) => (result.winner === 'X'
-      ? { ...current, you: current.you + 1 }
-      : { ...current, muse: current.muse + 1 }));
-    if (finished && !result) setScores((current) => ({ ...current, draws: current.draws + 1 }));
-  }, [board, status]);
-
-  useEffect(() => {
-    if (status === 'playing' || announcedRef.current === status) return;
-    announcedRef.current = status;
-    if (status === 'won') {
-      sounds.success();
-      notify(winnerOf(board)?.winner === 'X' ? 'You won. Screenshot it.' : 'Muse wins this round. Vengeance next?');
-    } else {
-      notify('Draw. Nobody blinked.', 'info');
-    }
-  }, [status, board, notify]);
-
-  const reset = useCallback(() => {
-    setBoard(EMPTY_BOARD);
-    setHighlight([]);
+  const reset = useCallback((nextSize: BoardSize = size) => {
+    setBoard(emptyBoard(nextSize));
     setStatus('playing');
-    announcedRef.current = 'playing';
     sounds.toggle();
-  }, []);
+  }, [size]);
 
-  const message = useMemo(() => {
-    if (status === 'draw') return 'Draw. Even Muse is speechless.';
-    if (status === 'won') return winnerOf(board)?.winner === 'X' ? 'You win. Do write that down.' : 'Muse takes it. Again?';
-    return 'Your move.';
-  }, [status, board]);
+  const changeSize = (next: BoardSize) => {
+    if (next === size) return;
+    sounds.click();
+    setSize(next);
+    setBoard(emptyBoard(next));
+    setStatus('playing');
+  };
+
+  const applyResult = (next: Board): Status => {
+    const outcome = winnerOf(next, size);
+    if (!outcome) return 'playing';
+    if (outcome.winner === 'draw') {
+      setScore((current) => ({ ...current, draws: current.draws + 1 }));
+      onScore?.(score.draws + 1);
+      return 'draw';
+    }
+    if (outcome.winner === 'X') {
+      setScore((current) => ({ ...current, you: current.you + 1 }));
+      onScore?.(score.you + 1);
+      return 'won';
+    }
+    setScore((current) => ({ ...current, ai: current.ai + 1 }));
+    return 'lost';
+  };
+
+  const play = (index: number) => {
+    if (!interactive || board[index]) return;
+    sounds.click();
+
+    const afterHuman = [...board];
+    afterHuman[index] = 'X';
+    setBoard(afterHuman);
+
+    // Resolve immediately: if the human just won, the AI must not place a
+    // pointless stone (the previous implementation always did).
+    const humanOutcome = winnerOf(afterHuman, size);
+    if (humanOutcome) {
+      setStatus(applyResult(afterHuman));
+      return;
+    }
+
+    const move = chooseMove(afterHuman, size, difficulty);
+    if (move === null) {
+      setStatus(applyResult(afterHuman));
+      return;
+    }
+
+    const afterAi = [...afterHuman];
+    afterAi[move] = 'O';
+    setBoard(afterAi);
+    setStatus(applyResult(afterAi));
+  };
+
+  const winningCells = useMemo(() => {
+    const outcome = winnerOf(board, size);
+    return outcome && outcome.winner !== 'draw' ? new Set(outcome.line) : new Set<number>();
+  }, [board, size]);
+
+  const statusText = status === 'won' ? 'You took it.'
+    : status === 'lost' ? 'The machine wins this round.'
+      : status === 'draw' ? 'Drawn.'
+        : `${emptyIndexes(board).length} move${emptyIndexes(board).length === 1 ? '' : 's'} left`;
 
   return (
-    <div className="flex flex-col items-center gap-5">
-      <div className="w-full max-w-sm rounded-3xl border border-white/70 bg-white/85 p-4 shadow-[0_10px_30px_rgba(29,29,31,0.08)] sm:p-5">
-        <div className="mb-3 flex items-center justify-between text-xs font-medium text-slate-600">
-          <span className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-cyan-50 text-cyan-700">X</span>
-            You
-            <span className="font-mono text-slate-400">{scores.you}</span>
-          </span>
-          <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] text-slate-500">{message}</span>
-          <span className="flex items-center gap-2">
-            <span className="font-mono text-slate-400">{scores.muse}</span>
-            Muse
-            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-50 text-violet-700">O</span>
-          </span>
+    <div className="card card-sheen w-full max-w-lg rounded-panel p-5 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-display text-base font-bold tracking-tight text-[var(--ink)]">Tic-Tac-Toe</h3>
+          <p className="text-xs text-[var(--muted)]">You are X. {DIFFICULTIES.find((d) => d.id === difficulty)?.hint}.</p>
         </div>
+        <button
+          type="button"
+          onClick={() => reset()}
+          onMouseEnter={() => sounds.hover()}
+          className="btn btn-ghost h-9 min-h-0 px-3 text-xs"
+        >
+          <RotateCcw size={13} aria-hidden="true" /> New round
+        </button>
+      </div>
 
-        <div className="grid grid-cols-3 gap-2" role="grid" aria-label="Tic tac toe board">
-          {board.map((cell, index) => (
+      <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
+        {([
+          ['You', score.you, 'var(--accent)'],
+          ['Draws', score.draws, 'var(--muted)'],
+          ['Machine', score.ai, 'var(--iris)'],
+        ] as const).map(([label, value, colour]) => (
+          <div key={label} className="rounded-card border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2">
+            <dt className="text-[10px] font-semibold uppercase tracking-wider text-[var(--faint)]">{label}</dt>
+            <dd className="font-display text-lg font-bold" style={{ color: colour }}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="flex items-center gap-1" role="group" aria-label="Board size">
+          {SIZE_OPTIONS.map((option) => (
             <button
-              key={index}
+              key={option}
               type="button"
-              onClick={() => play(index)}
-              disabled={status !== 'playing' || Boolean(cell)}
-              aria-label={`Row ${Math.floor(index / 3) + 1}, column ${(index % 3) + 1}${cell ? `: ${cell}` : ': empty'}`}
-              className={`flex aspect-square items-center justify-center rounded-2xl border text-4xl font-display font-bold transition-all duration-200 sm:text-5xl
-                ${cell === 'X' ? 'border-cyan-200 bg-cyan-50/70 text-cyan-700' : ''}
-                ${cell === 'O' ? 'border-violet-200 bg-violet-50/70 text-violet-700' : ''}
-                ${!cell && status === 'playing' ? 'border-slate-200 bg-slate-50/70 text-slate-300 hover:border-cyan-300 hover:bg-cyan-50/40' : ''}
-                ${!cell && status !== 'playing' ? 'border-slate-200 bg-slate-50/50' : ''}
-                ${highlight.includes(index) ? 'ring-2 ring-cyan-400/70' : ''}
-                disabled:cursor-default
-              `}
+              aria-pressed={size === option}
+              onClick={() => changeSize(option)}
+              className="filter-pill"
             >
-              {cell ?? ''}
+              {option}×{option}
             </button>
           ))}
         </div>
-
-        <button
-          type="button"
-          onClick={reset}
-          className="btn-premium mt-4 w-full rounded-xl py-2.5 text-sm font-semibold text-slate-700"
-        >
-          New round
-        </button>
+        <div className="flex items-center gap-1" role="group" aria-label="Difficulty">
+          {DIFFICULTIES.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={difficulty === option.id}
+              onClick={() => { sounds.click(); setDifficulty(option.id); }}
+              className="filter-pill"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <p className="max-w-sm text-center text-xs text-slate-500">
-        Draws: <span className="font-mono">{scores.draws}</span> · Built with <span className="font-mono">['X','O'].flat()</span>
+
+      {/* `role="grid"` requires row/gridcell structure. The previous markup
+          declared the role and then put bare buttons inside it, which is
+          invalid and left screen readers with no way to locate a cell. */}
+      <div
+        role="grid"
+        aria-label={`${size} by ${size} Tic-Tac-Toe board`}
+        className="mx-auto mt-5 w-full max-w-[19rem]"
+        style={{ display: 'grid', gridTemplateColumns: `repeat(${size}, minmax(0, 1fr))`, gap: 6 }}
+      >
+        {board.map((cell, index) => {
+          const row = Math.floor(index / size) + 1;
+          const column = (index % size) + 1;
+          const isWinner = winningCells.has(index);
+          return (
+            <button
+              key={index}
+              role="gridcell"
+              type="button"
+              onClick={() => play(index)}
+              onMouseEnter={() => sounds.hover()}
+              aria-label={`Row ${row}, column ${column}${cell ? `: ${cell}` : ', empty'}`}
+              // `aria-disabled` rather than `disabled`: a filled cell must stay
+              // in the tab order, or its label becomes unreachable once played.
+              aria-disabled={!interactive || cell !== null}
+              className={[
+                'grid aspect-square place-items-center rounded-card border text-2xl font-bold transition-all duration-[--dur-hover]',
+                isWinner
+                  ? 'border-[rgba(10,130,189,0.55)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-[0_0_0_3px_var(--accent-soft)]'
+                  : cell === 'O'
+                    ? 'border-[rgba(97,70,223,0.3)] bg-[rgba(97,70,223,0.06)] text-[var(--iris)]'
+                    : cell === 'X'
+                      ? 'border-[rgba(10,130,189,0.3)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                      : 'border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink)] hover:border-[rgba(10,130,189,0.4)] hover:bg-[var(--accent-soft)]',
+                (!interactive || cell) ? 'cursor-default' : 'cursor-pointer',
+              ].join(' ')}
+            >
+              {cell}
+            </button>
+          );
+        })}
+      </div>
+
+      <p role="status" aria-live="polite" className="mt-4 flex items-center justify-center gap-2 text-center text-[13px] font-medium text-[var(--ink-2)]">
+        {status !== 'playing' && <Trophy size={14} aria-hidden="true" className="text-[var(--accent)]" />}
+        {statusText}
+      </p>
+
+      <p className="sr-only">
+        {lines.length} winning lines are available on this board.
       </p>
     </div>
   );
 }
+
+export type { Player };

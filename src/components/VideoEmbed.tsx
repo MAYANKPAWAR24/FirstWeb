@@ -1,29 +1,29 @@
 import { useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { isDirectAudioUrl, isImageUrl, resolveVideoSource } from '@/lib/media';
+import { isDirectAudioUrl, isImageUrl, resolveVideoSource, hostLabel, normalizeUrl } from '@/lib/media';
 
 /**
- * Renders a video the only way it can actually work.
+ * Media rendering.
  *
- * `<iframe>` is reserved for hosts that explicitly allow framing (YouTube,
- * Vimeo). Every other URL either plays natively from a direct file link or
- * degrades to an external link card — which is what removes the
- * "Refused to connect" errors an iframe produces on X-Frame-Options-protected
- * sites.
+ * `resolveVideoSource` is the single decision point for what a URL is, so the
+ * card and the lightbox can never disagree about whether something is
+ * embeddable. Only hosts that permit framing are ever put in an `<iframe>`;
+ * anything else gets an explicit external card rather than a broken player.
  */
 export function VideoPlayer({ url, title }: { url: string; title: string }) {
   const source = useMemo(() => resolveVideoSource(url), [url]);
 
   if (source.kind === 'embed') {
     return (
-      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-black/90">
+      <div className="aspect-video w-full overflow-hidden rounded-panel border border-[var(--line)] bg-black">
         <iframe
           src={source.src}
           title={title}
-          className="h-full w-full"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           referrerPolicy="strict-origin-when-cross-origin"
           allowFullScreen
+          loading="lazy"
+          className="h-full w-full border-0"
         />
       </div>
     );
@@ -32,52 +32,49 @@ export function VideoPlayer({ url, title }: { url: string; title: string }) {
   if (source.kind === 'file') {
     return (
       <video
+        src={source.src}
         controls
-        autoPlay
         playsInline
         preload="metadata"
-        src={source.src}
-        className="max-h-[75dvh] w-full rounded-2xl bg-black"
+        className="max-h-[70dvh] w-full rounded-panel border border-[var(--line)] bg-black"
       >
-        Your browser does not support HTML5 video.
+        <track kind="captions" />
       </video>
     );
   }
 
-  return <ExternalLinkCard url={source.url} label={source.label} title={title} />;
+  return <ExternalLinkCard url={normalizeUrl(url)} label={source.label} title={title} />;
 }
 
-/** Media preview for custom sections: image, video or audio, auto-detected. */
 export function MediaPreview({ url, title }: { url: string; title: string }) {
-  const value = url.trim();
-  const source = useMemo(() => resolveVideoSource(value), [value]);
-
-  if (!value) {
+  if (!url.trim()) {
     return (
-      <p className="py-10 text-center text-sm text-slate-500">
-        No media URL is set for “{title}”. Add one from the admin panel.
+      <p className="rounded-card border border-dashed border-[var(--line-strong)] bg-[var(--surface-2)] px-4 py-6 text-center text-[13px] text-[var(--muted)]">
+        No media source set yet. Add one in <strong>Admin → Section Builder</strong>.
       </p>
     );
   }
 
-  if (source.kind !== 'external') return <VideoPlayer url={value} title={title} />;
+  const source = resolveVideoSource(url);
+  if (source.kind !== 'external') return <VideoPlayer url={url} title={title} />;
 
-  if (isDirectAudioUrl(source.url)) {
+  if (isDirectAudioUrl(url)) {
     return (
-      <audio controls preload="none" src={source.url} className="w-full">
-        Your browser does not support audio playback.
-      </audio>
+      <div className="rounded-panel border border-[var(--line)] bg-[var(--surface-2)] p-4">
+        <label className="sr-only" htmlFor={`preview-audio-${title}`}>Play {title}</label>
+        <audio id={`preview-audio-${title}`} controls preload="none" src={source.url} className="w-full" />
+      </div>
     );
   }
 
-  if (isImageUrl(source.url)) {
+  if (isImageUrl(url)) {
     return (
       <img
         src={source.url}
         alt={title}
         loading="lazy"
         decoding="async"
-        className="w-full rounded-2xl border border-white/70 shadow-[0_10px_30px_rgba(29,29,31,0.08)]"
+        className="w-full rounded-panel border border-[var(--line)] object-cover"
       />
     );
   }
@@ -85,32 +82,35 @@ export function MediaPreview({ url, title }: { url: string; title: string }) {
   return <ExternalLinkCard url={source.url} label={source.label} title={title} />;
 }
 
-/** Fallback card for URLs no iframe is allowed to embed. */
-export function ExternalLinkCard({ url, label, title }: { url: string; label: string; title: string }) {
+export function ExternalLinkCard({ url, label, title }: { url: string; label?: string; title: string }) {
   if (!url) {
     return (
-      <p className="py-10 text-center text-sm text-slate-500">
-        No link is set for “{title}”. Add one from the admin panel.
+      <p className="rounded-card border border-dashed border-[var(--line-strong)] bg-[var(--surface-2)] px-4 py-6 text-center text-[13px] text-[var(--muted)]">
+        No link set for this item yet.
       </p>
     );
   }
 
+  const host = label || hostLabel(url);
+
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="external-card flex flex-col items-center gap-3 rounded-2xl px-6 py-10 text-center"
-    >
-      <span className="flex h-14 w-14 items-center justify-center rounded-full glass text-cyan-700">
-        <ExternalLink size={24} aria-hidden="true" />
+    <div className="card card-sheen rounded-panel px-6 py-10 text-center">
+      <span
+        aria-hidden="true"
+        className="mx-auto grid h-14 w-14 place-items-center rounded-full border border-[var(--line)] bg-[var(--surface-2)] text-[var(--accent)]"
+      >
+        <ExternalLink size={22} />
       </span>
-      <span className="min-w-0">
-        <span className="block font-display text-lg font-bold text-slate-800">Watch “{title}” on {label}</span>
-        <span className="mt-1 block text-sm text-slate-500">
-          This host blocks embedded playback, so it opens in a new tab instead.
-        </span>
-      </span>
-    </a>
+      <p className="mt-4 font-display text-[15px] font-bold tracking-tight text-[var(--ink)]">
+        Watch “{title}” on {host}
+      </p>
+      <p className="mx-auto mt-1.5 max-w-sm text-[13px] leading-relaxed text-[var(--muted)]">
+        This host blocks embedded playback, so it opens in a new tab instead.
+      </p>
+      <a href={url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary mt-5">
+        Open on {host}
+        <ExternalLink size={14} aria-hidden="true" />
+      </a>
+    </div>
   );
 }

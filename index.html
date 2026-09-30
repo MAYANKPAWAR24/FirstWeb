@@ -2,21 +2,71 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%231d1d1f'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-family='Arial,sans-serif' font-size='24' font-weight='700' fill='white'%3EMP%3C/text%3E%3C/svg%3E" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#F5F5F7" />
-    <meta name="author" content="MAYANK PAWAR" />
-    <meta name="description" content="The portfolio of MAYANK PAWAR — developer, designer, and creator." />
-    <title>MAYANK PAWAR — Portfolio</title>
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="MAYANK PAWAR — Portfolio" />
-    <meta property="og:description" content="The portfolio of MAYANK PAWAR — developer, designer, and creator." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f7f9" />
+
+    <!--
+      Fallback metadata only. `src/lib/seo.ts` rewrites every one of these at
+      runtime from the saved record, so the served metadata always matches what
+      the admin actually configured. The values here matter for a crawler that
+      does not execute JavaScript.
+    -->
+    <title>MAYANK PAWAR — Writer, Developer &amp; Creator</title>
+    <meta
+      name="description"
+      content="Portfolio and published writing by MAYANK PAWAR — a writer and front-end developer working across literature and technology."
+    />
+    <link rel="canonical" href="/" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <meta property="og:type" content="profile" />
+    <meta property="og:title" content="MAYANK PAWAR — Writer, Developer &amp; Creator" />
+    <meta
+      property="og:description"
+      content="Portfolio and published writing by MAYANK PAWAR — a writer and front-end developer working across literature and technology."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:site_name" content="MAYANK PAWAR" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="MAYANK PAWAR — Portfolio" />
-    <meta name="twitter:description" content="The portfolio of MAYANK PAWAR — developer, designer, and creator." />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Serif:ital,wght@0,400;0,500;1,400&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif:wght@400&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+      />
+    </noscript>
   </head>
   <body>
     <div id="root"></div>
+
+    <!--
+      The prerender plugin fills `#root` with real, semantic content at build
+      time so a crawler that never runs JavaScript still reads text, headings
+      and links. It carries an H1, the bio, every section, and internal anchors.
+    -->
+    <noscript>
+      <div style="max-width:46rem;margin:0 auto;padding:3rem 1.25rem;font-family:system-ui,sans-serif;line-height:1.65;color:#101219">
+        <h1 style="font-size:2rem;margin:0 0 .5rem">MAYANK PAWAR</h1>
+        <p style="margin:0 0 1.5rem;color:#626a7d">Writer · Developer · Creator</p>
+        <p>
+          Writer and software developer working where literature meets technology.
+          This site is both my portfolio and my reading room — professional work on
+          one side, published writing on the other. The full interactive version
+          needs JavaScript.
+        </p>
+      </div>
+    </noscript>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

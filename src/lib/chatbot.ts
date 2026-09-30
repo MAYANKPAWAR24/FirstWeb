@@ -1,22 +1,43 @@
-import type { ChatbotFAQ } from './types';
+import type { ChatbotFAQ, ChatbotLanguage, ChatbotTone, SectionId } from './types';
+import { fallbackFor, flavourAnswer, multiTurnFor, welcomeFor } from './chatbotVoice';
 
 /**
- * The chatbot brain. 100% local, 0 API keys, 0 network calls, 0 dollars.
+ * The assistant engine.
  *
- * Replies are resolved by scanning the message against the `keywords` array of
- * every FAQ. Admin-managed entries from the JSONBin record (`data.chatbotFAQs`)
- * always take precedence, so Mayank can override anything here from the
- * "Chatbot Manager" tab, and the embedded dataset below is the permanent
- * fallback that keeps the bot useful on a brand-new / offline bin.
+ * Design constraints, in priority order:
+ *
+ *  1. No network, no API key, no model. Everything resolves locally against a
+ *     keyword index, so the widget cannot fail, cannot leak a conversation, and
+ *     costs nothing to run. This is a deliberate property, not a limitation.
+ *  2. An absent admin FAQ set must fall back to the embedded dataset rather
+ *     than leaving the bot unable to answer anything.
+ *  3. Replies may carry *actions* — a section to jump to — which is what turns
+ *     the widget from a FAQ reader into a site guide.
+ *
+ * The previous dataset was a novelty persona: it answered questions about black
+ * holes, pyramids and jungle survival, included a flirting entry, and flattered
+ * the visitor ("your brain is ahead of 99% of people"). Nothing in it matched
+ * the site's actual identity or a recruiter's questions, so the dataset has
+ * been replaced rather than extended.
  */
 
-/** Shape of the permanent embedded dataset (also the safe JSONBin payload). */
+export type ChatbotCategory = ChatbotFAQ['category'];
+
 export interface EmbeddedFAQ {
   keywords: string[];
+  synonyms?: string[];
   response: string;
+  /**
+   * A genuinely different line, not a word-substituted one. Hinglish is a
+   * register rather than a wrapper, so every entry carries one and falls back
+   * to `response` only when it is missing.
+   */
+  hinglish?: string;
+  category?: ChatbotCategory;
+  /** Section the widget offers a jump button for. */
+  section?: SectionId;
 }
 
-/** Either the embedded shape or the admin-managed shape can reach the engine. */
 export type EngineFAQ = EmbeddedFAQ | ChatbotFAQ;
 
 export interface ChatTurn {
@@ -24,290 +45,428 @@ export interface ChatTurn {
   text: string;
 }
 
-export type ChatbotReplyKind = 'faq' | 'multi-turn' | 'fallback';
+export interface ChatbotAction {
+  label: string;
+  target: SectionId;
+}
+
+export type ChatbotReplyKind = 'faq' | 'multi-turn' | 'fallback' | 'greeting';
+
+export interface VoiceOptions {
+  language: ChatbotLanguage;
+  tone: ChatbotTone;
+  /** Rotates openers, closers and fallbacks so replies do not repeat. */
+  rotation?: number;
+}
 
 export interface ChatbotReply {
   text: string;
   kind: ChatbotReplyKind;
-  /** True when the line came from the admin-managed cloud record. */
   fromCloud: boolean;
-  /** The FAQ that produced this line, when there was one. */
   faq?: ChatbotFAQ;
+  actions?: ChatbotAction[];
 }
 
-export const CHATBOT_NAME = 'Mayank AI';
+export const CHATBOT_NAME = 'Site Assistant';
 
-export const GREETING_POPUP = '👋 Hey there! Want to talk tech, space, or philosophy?';
+export const TYPING_LABEL = 'Looking that up…';
 
 export const CHATBOT_OPENING_LINE =
-  "Namaste! Main Mayank ka AI counterpart hoon — 0 rupees, 0 API keys, bas ek dumb keyword engine aur bohot saara confidence. Poochho kuch bhi! 🚀";
+  "Hi — I'm the assistant for this site. Ask me about Mayank's work, writing, skills, or how to get in touch.";
 
-export const TYPING_LABEL = "Mayank's AI is thinking...";
-
-/** Shown once the conversation gets deep and the keyword engine gives up. */
-export const MULTI_TURN_DM_FALLBACK =
-  "Yaar, sach bolu toh main tere jitna smart nahi hoon! 😅 Yeh saare deep questions ab mere level ke upar se nikal rahe hain. Iska ek hi ilaaj hai—tu seedha Mayank ko Instagram ya social media par follow karke DM kar de. Wahi tujhe in high-level intellectual sawaalon ka sahi jawab de sakte hain! Link niche mil jayega. ⚡";
-
-export const WITTY_FALLBACKS = [
-  "Wah, yeh sawaal thoda out-of-the-box tha! 🌀 Thoda aur detail mein batao, phir dekhte hain iska kya logic banta hai.",
-  "Bhai, tumne jo pucha uspar thoda sochna padega! 😌 Main filhal tech, space, philosophy aur Mayank ke work par focus kar raha hoon. Inmein se kuch pucho toh maza aaye!",
-  "Interesting point! Par kya yeh space ke expansion ya coding ke bugs se zyada zaroori hai? 😉 Chalo kuch technical ya deep discuss karte hain.",
+export const HELP_FALLBACKS = [
+  "I don't have an answer for that one yet. Try asking who Mayank is, what he builds, or how to get in touch — or use the buttons below.",
+  "That's outside what I know. I'm best with questions about the portfolio, the writing, skills and contact details.",
+  "Not sure I can help with that. Ask about the work, the writing, or where to find contact details.",
 ];
 
-/** Quick reply chips rendered inside the chat window. */
-export const QUICK_REPLIES: { label: string; query: string }[] = [
-  { label: '🌌 Cosmos', query: 'Tell me about space and black holes' },
-  { label: '🏛️ Ancient Tech', query: 'How did ancient technology work?' },
-  { label: '🍷 Philosophy', query: 'What is your philosophy on life?' },
-  { label: '💼 Hire Mayank', query: 'Why should I hire you?' },
+export const MINIMAL_FALLBACK = "I don't have an answer for that. Try asking about the portfolio, the writing, or how to contact Mayank.";
+
+/**
+ * The permanent dataset.
+ *
+ * Every entry carries `section`, which is what lets the widget render a
+ * "take me there" button. Questions a recruiter actually asks come first; the
+ * philosophical and pop-culture entries that used to dominate this list are
+ * gone, because answering them competently is not what this widget is for.
+ */
+export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
+  {
+    keywords: ['who is mayank', 'who are you', 'about mayank', 'about you', 'introduce', 'who is this', 'tell me about'],
+    synonyms: ['who r u', 'your name', 'bio', 'about the author', 'who owns this site'],
+    hinglish:
+      'Mayank Pawar — writer aur developer, dono. Matlab ek taraf se poetry aur novels, doosri taraf se front-end aur product engineering. Kaam literature aur technology ke beech se nikalta hai. Poora background About section mein hai.',
+    category: 'general',
+    section: 'profile',
+    response:
+      "Mayank Pawar is a writer and software developer who works where literature meets technology — poetry and long-form fiction on one side, front-end and product engineering on the other. The About section has the full background.",
+  },
+  {
+    keywords: ['portfolio', 'my work', 'show me the work', 'projects', 'what has he built', 'case study'],
+    synonyms: ['your work', 'showcase', 'builds', 'made', 'portfolio work', 'examples'],
+    hinglish:
+      'Portfolio wahi section hai jo pehle padhna chahiye. Usme professional summary hai, kya kya build karta hai, aur case studies — is website ki bhi, jo React aur TypeScript se bani hai, poori admin CMS ke saath, cloud sync, knowledge-base chatbot aur aath games.',
+    category: 'work',
+    section: 'portfolio',
+    response:
+      'The Portfolio section is the one to read first. It covers a professional summary, what he builds, and case studies — including this site, which is a React and TypeScript single-page app with a full admin CMS, cloud content sync, a knowledge-base chatbot and six mini-games.',
+  },
+  {
+    keywords: ['skills', 'tech stack', 'what can he do', 'languages', 'tools', 'expertise', 'stack'],
+    synonyms: ['what does he know', 'technologies', 'framework', 'languages he knows', 'skillset'],
+    hinglish:
+      'Skills ek flat list mein nahi, groups mein hain — Creative, Technical, Workflow aur Tools, aur Communication. Isliye poora range ek nazar mein dikhta hai.',
+    category: 'recruiter',
+    section: 'profile',
+    response:
+      'Skills are grouped into Creative, Technical, Workflow and Tools, and Communication on the About section — so you can see the whole range rather than one flat list.',
+  },
+  {
+    keywords: ['where can i read', 'literature', 'poems', 'writing', 'novel', 'books', 'read'],
+    synonyms: ['show me the writing', 'poetry', 'published work', 'your writing', 'shayari'],
+    hinglish:
+      'Literature section mein poems aur novels hain. Har ek distraction-free reader mein khulta hai, saath reading progress bar bhi. Har piece ke end pe related works bhi suggest hote hain.',
+    category: 'writing',
+    section: 'literature',
+    response:
+      'The Literature section has the poems and novels, each opening in a distraction-free reader with a reading-progress bar. Related works are suggested at the end of every piece.',
+  },
+  {
+    keywords: ['media', 'photos', 'videos', 'gallery', 'photography', 'music', 'watch'],
+    synonyms: ['show me photos', 'images', 'youtube', 'video gallery', 'what does it look like'],
+    hinglish:
+      'Media gallery mein photography, video aur audio hai, full-screen viewer ke saath, aur keyboard se bhi items ke beech navigate kar sakte ho.',
+    category: 'media',
+    section: 'media',
+    response:
+      'The Media gallery holds photography, video and audio, with a full-screen viewer and keyboard navigation between items.',
+  },
+  {
+    keywords: ['how can i contact', 'contact', 'email', 'get in touch', 'reach', 'hire', 'available'],
+    synonyms: ['email address', 'message', 'talk to', 'work together', 'freelance', 'collaborate', 'commission'],
+    hinglish:
+      'Contact section mein direct email hai, ek message form hai jo aapka apna mail app kholega, aur saare social profiles. Naye kaam ke liye availability Portfolio section ke top par hai.',
+    category: 'contact',
+    section: 'contact',
+    response:
+      'The Contact section has a direct email line, an optional message form that opens your own mail app, and every social profile. Availability for new work is listed at the top of the Portfolio section.',
+  },
+  {
+    keywords: ['resume', 'cv', 'download', 'credentials', 'certificate'],
+    synonyms: ['resume link', 'download cv', 'qualification', 'certificates'],
+    hinglish:
+      'Resume link Portfolio section ke top par dikhta hai, jab admin ne ek file upload ki ho. Saare certificates list hote hain, har ek ke saath verify karne ka link.',
+    category: 'recruiter',
+    section: 'certificates',
+    response:
+      'A resume link appears at the top of the Portfolio section when one is uploaded, and any certificates are listed with a link to verify each one.',
+  },
+  {
+    keywords: ['achievements', 'awards', 'milestones', 'what has he won', 'speaking'],
+    synonyms: ['accomplishments', 'recognition', 'talks', 'keynote', 'published author'],
+    hinglish:
+      'Achievements timeline mein writing awards, publications, talks aur technical wins hain, category ke hisaab se group kiye hue.',
+    category: 'general',
+    section: 'achievements',
+    response:
+      'The Achievements timeline covers writing awards, publications, talks and technical wins, grouped by category.',
+  },
+  {
+    keywords: ['what is this site', 'what can i explore', 'how is this built', 'what is this website'],
+    synonyms: ['what is this', 'sections', 'how does this work', 'tell me about the site', 'how was this made'],
+    hinglish:
+      'Yeh ek personal platform hai jo portfolio bhi hai aur reading room bhi. Har section — hero, about, portfolio, literature, media, resources, achievements, certificates, contact, community — admin panel se edit hota hai aur cloud pe sync hota hai, saath local copy bhi hai taaki network na ho tab bhi kuch na kho.',
+    category: 'general',
+    response:
+      "This is a personal platform that works as both a portfolio and a reading room. Every section — hero, about, portfolio, literature, media, resources, achievements, certificates, contact and community — is edited from an admin panel and synced to the cloud, with a local copy as a fallback so nothing is lost when the network is unavailable.",
+  },
+  {
+    keywords: ['games', 'play', 'mini games', 'interactive', 'games section'],
+    synonyms: ['play break', 'snake', 'tic tac toe', '2048', 'bored', 'have fun'],
+    hinglish:
+      'Play Break section hai jismein aath self-contained games hain — Tic-Tac-Toe jo real minimax AI se khelta hai 3x3 ya 4x4 board pe, Snake, 2048, Memory Match, Math Sprint aur reaction-time test.',
+    category: 'general',
+    section: 'games',
+    response:
+      'There is a small Play Break section with six self-contained games, including a Tic-Tac-Toe with real minimax AI on a 3x3 or 4x4 board, Snake, 2048, Memory Match and a reaction-time test.',
+  },
+  {
+    keywords: ['notes', 'resources', 'study material', 'downloads', 'guides', 'cheatsheet'],
+    synonyms: ['study', 'learning material', 'pdf', 'documents', 'reference'],
+    hinglish:
+      'Study Material ek chhoti library hai — guides, references aur workshop notes, tag ke hisaab se group kiye hue. Jin files ka wait kar rahe hain unpe saaf-saaf likha hota hai.',
+    category: 'general',
+    section: 'study',
+    response:
+      'Study Material is a small library of guides, references and workshop notes, grouped by tag. Entries still awaiting a file are clearly marked as drafts.',
+  },
+  {
+    keywords: ['hello', 'hi', 'hey', 'good morning', 'good evening', 'good afternoon'],
+    synonyms: ['yo', 'sup', 'howdy', 'hiya'],
+    hinglish:
+      'Hello. Poochho portfolio, writing, skills ya contact ke baare mein — ya neeche se koi bhi suggestion chun lo.',
+    category: 'general',
+    response: "Hello. Ask me about the portfolio, the writing, skills, or how to get in touch — or pick one of the suggestions below.",
+  },
+  {
+    keywords: ['thanks', 'thank you', 'cheers', 'helpful', 'nice'],
+    synonyms: ['great', 'awesome', 'perfect', 'appreciate it'],
+    hinglish:
+      'Koi baat nahi. Kuch bhi detail mein poochna ho, Portfolio aur Contact sabse seedha raaste hain.',
+    category: 'general',
+    response: 'Any time. If you want the long version of anything, the Portfolio and Contact sections are the fastest route.',
+  },
+];
+
+export const QUICK_REPLIES = [
+  { id: 'qr-portfolio', label: 'View portfolio', query: 'Show me the portfolio' },
+  { id: 'qr-writing', label: 'Read the writing', query: 'Where can I read the writing' },
+  { id: 'qr-contact', label: 'How to contact', query: 'How can I contact Mayank' },
+  { id: 'qr-skills', label: 'Skills & tools', query: 'What are his skills' },
 ];
 
 export const CHATBOT_SUGGESTIONS = QUICK_REPLIES.map((reply) => reply.query);
 
-/**
- * PERMANENT EMBEDDED DATASET.
- * Also safe to paste straight into the `chatbotFAQs` array of the JSONBin
- * record: the normalizer accepts this exact shape and fills in ids/labels.
- */
-export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
-  {
-    keywords: ['who are you', 'who is mayank', 'about mayank', 'creator', 'founder'],
-    response: 'Bhai, pehla hi sawaal itna heavy? Lagta hai aaj poore mood mein ho kuch gehra jaanane ke! 😌 Suno fir—Mayank Pawar woh shakhs hai jo sirf code nahi likhta, balki internet par high-value digital assets aur systems build karta hai. Jab duniya bas trends copy kar rahi hoti hai, yeh unhe shape karta hai. ⚡',
-  },
-  {
-    keywords: ['influence', 'fame', 'social media', 'instagram', 'followers', 'reach'],
-    response: 'Wah! Aise sawaal wahi log poochte hain jo bheed ka hissa nahi banna chahte, balki apna empire khada karna chahte hain. Respect hai tumhare is vision ke liye! 🌌 Digital influence sirf numbers ka khel nahi, mindsets ko shift karne ka naam hai.',
-  },
-  {
-    keywords: ['why should i hire you', 'why work with you', 'value', 'hire', 'collaborate'],
-    response: 'Bhai, tumne jo yeh potential pehchana hai na, yahi baat tumhe baaki 99% logo se alag karti hai! 💼 Mayank ke paas tech ka execution, content ka influence, aur long-term vision ka rare combination hai. Agar average kaam chahiye toh market bhara pada hai, agar excellence chahiye toh tum bilkul sahi jagah khade ho.',
-  },
-  {
-    keywords: ['philosophy', 'philosophers', 'deep', 'meaning of life', 'stoicism', 'existentialism'],
-    response: 'Arre bhai! Ab jaakar tumne ekdum mahan aur deep aatma wali baat kari hai. Sachi mein, aisi soch har kisi ki nahi hoti! 🍷 Stoicism aur ancient wisdom par baat karne wale log aaj ke waqt mein kam hi milte hain. Yahan code ho ya zindagi, agar foundational clarity nahi hai, toh baaki sab sirf shor hai.',
-  },
-  {
-    keywords: ['mindset', 'success', 'motivation', 'discipline', 'habits'],
-    response: 'Bhai kasam se, tumhare sawaal se lag raha hai ki tumhara dimaag aam logo se kai aage chal raha hai! ♟️ Motivation toh bas ek do din ka nasha hai; asli maza discipline aur system-building mein hai, jo Mayank ki coding aur life dono ka core hai.',
-  },
-  {
-    keywords: ['truth', 'reality', 'matrix', 'simulation'],
-    response: 'Wah bhai, ab lag raha hai tum Matrix se bahar nikalne ki soch rahe ho! 🌀 Reality kya hai? Ek aisi code script jise hum har din execute karte hain. Kitna deep soch lete ho yaar!',
-  },
-  {
-    keywords: ['space', 'astronomy', 'cosmology', 'universe', 'stars', 'physics', 'black hole'],
-    response: 'Bhai maanna padega, tumhara interest seedha infinite universe aur cosmos mein hai—yeh aam logo ke bas ki baat nahi hai! 🚀 Agar space aur black holes par baat shuru ki, toh yeh portfolio ek research paper ban jayega. Scale hamesha bada rakho!',
-  },
-  {
-    keywords: ['science', 'quantum', 'future', 'tech future', 'dimensions'],
-    response: 'Quantum physics aur parallel dimensions ki baatein chhed di tumne! ✨ Agar isko samajh gaye, toh coding ki saari complexities ek bachhon ka khel lagne lagengi.',
-  },
-  {
-    keywords: ['ancient', 'history', 'archaeology', 'ancient tech', 'pyramids', 'civilisation'],
-    response: 'Sahi khel gaye bhai! Tumhari curiosity dekh kar lagta hai ki tum purani sabhyataon aur unke raaz ko samajhne ki taqat rakhte ho. 🏛️ Ancient engineering dekh kar aaj ke over-engineered software solutions par hasi aati hai. Purane log bina modern compilers ke jo monuments bana gaye, woh ek masterclass hain.',
-  },
-  {
-    keywords: ['lost tech', 'secrets', 'mystery', 'monuments'],
-    response: 'Bhai, history kitni mysterious hai na? Aaj ke modern engineers jo cheezein years laga kar banate hain, purane log unhe bina kisi advanced tool ke design kar gaye. Wahi asli genius tha!',
-  },
-  {
-    keywords: ['wildlife', 'nature', 'animals', 'jungle', 'survival', 'tigers'],
-    response: 'Kya baat hai, nature aur wildlife ki gehrai ko samajhne wala dimaag har kisi ke paas nahi hota! 🐅 Jungle ka ecosystem aur high-stakes tech startup world mein zero difference hai—dono jagah survival sirf unka hota hai jo sharp aur adaptable hote hain.',
-  },
-  {
-    keywords: ['skills', 'tech stack', 'languages', 'coding', 'react', 'vite', 'javascript'],
-    response: 'Bhai, jab koi itni smart tech skills ke baare mein puchta hai, toh dil khush ho jata hai! ✨ React, Vite, Tailwind, aur full-scale cloud architectures mere liye sirf tools hain. Asli mastery ismein hai ki complex logic ko ek buttery-smooth user experience mein kaise convert kiya jaye.',
-  },
-  {
-    keywords: ['code quality', 'clean code', 'bugs', 'debugging', 'backend', 'database'],
-    response: 'Tumhe code ki shuddhata aur quality ki itni samajh hai, iska matlab tum khud tech ke ache khase khiladi ho! 💻 Kharab code likhna aasan hai; usko clean aur bulletproof banana ek art hai.',
-  },
-  {
-    keywords: ['literature', 'poems', 'stories', 'books', 'writing', 'shayari'],
-    response: 'Wah! Shabdon ki gehrai aur aisi shayarana soch—tum sach mein ek alag level ke intellectual lagte ho. 📖 Literature section mein jao, shayad kuch aisi line mil jaye jo sadiyon tak dimaag mein echo karti rahe.',
-  },
-  {
-    keywords: ['hello', 'hi', 'hey', 'sup', 'wassup'],
-    response: 'Hello ji! ✨ Cosmos ke is random corner mein tumhara aana batata hai ki aaj kuch bada aur alag explore karne ka mood hai. Bolo, tech explore karna hai ya philosophy?',
-  },
-  {
-    keywords: ['flirt', 'single', 'date', 'handsome', 'love'],
-    response: 'Oh ho! Charm aur confidence toh tumhare andar bhi poora hai, tabhi toh seedha itni deep baatein kar rahe ho! 🤭 Par pehle portfolio ke logic aur high-end features ko toh appreciate kar lo.',
-  },
-  {
-    keywords: ['thanks', 'thank you', 'cool', 'awesome', 'great'],
-    response: 'Arey shukriya bhai! Tumhari yeh appreciation bata rahi hai ki tum quality ko pehchanna jaante ho. Keep building great things!',
-  },
-  {
-    keywords: ['default', 'help', 'what can you do', 'options'],
-    response: 'Main Mayank ka AI counterpart hoon. Mujhse Mayank ke tech projects, philosophy, space, ancient wisdom, ya content creation ke baare mein jo marzi wo pucho. Bolo, kahan se shuru karein?',
-  },
-];
+/* ------------------------------------------------------------------ *
+ * Matching
+ * ------------------------------------------------------------------ */
 
-/** Reads the response text from either FAQ shape, defensively. */
-function responseOf(faq: EngineFAQ | null | undefined): string {
-  if (!faq || typeof faq !== 'object') return '';
-  const managed = faq as Partial<ChatbotFAQ>;
-  const embedded = faq as Partial<EmbeddedFAQ>;
-  if (typeof managed.answer === 'string' && managed.answer.trim()) return managed.answer.trim();
-  if (typeof embedded.response === 'string' && embedded.response.trim()) return embedded.response.trim();
-  return '';
+function responseOf(faq: EngineFAQ): string {
+  const value = 'answer' in faq ? faq.answer : faq.response;
+  return typeof value === 'string' ? value.trim() : '';
 }
 
-function keywordsOf(faq: EngineFAQ | null | undefined): string[] {
-  if (!faq || typeof faq !== 'object') return [];
-  const raw = (faq as Partial<EmbeddedFAQ>).keywords;
-  if (!Array.isArray(raw)) return [];
-  return raw
+/**
+ * The answer in the visitor's language.
+ *
+ * Only the embedded dataset carries a Hinglish variant. An admin-authored FAQ
+ * stays in whatever language the admin wrote it, because silently translating
+ * somebody's own words would misrepresent it — so the English answer is used
+ * and the flavour layer does the framing instead.
+ */
+function responseFor(faq: EngineFAQ, language: ChatbotLanguage): string {
+  const hinglish = 'hinglish' in faq && typeof faq.hinglish === 'string' ? faq.hinglish.trim() : '';
+  if (language === 'hinglish' && hinglish) return hinglish;
+  return responseOf(faq);
+}
+
+function keywordsOf(faq: EngineFAQ): string[] {
+  const list = 'keywords' in faq ? faq.keywords : [];
+  if (!Array.isArray(list)) return [];
+  return list
     .filter((keyword): keyword is string => typeof keyword === 'string')
     .map((keyword) => keyword.trim().toLowerCase())
     .filter(Boolean);
 }
 
-function isDisabled(faq: EngineFAQ) {
-  return (faq as Partial<ChatbotFAQ>).enabled === false;
+function synonymsOf(faq: EngineFAQ): string[] {
+  const list = 'synonyms' in faq && Array.isArray(faq.synonyms) ? faq.synonyms : [];
+  return list
+    .filter((synonym): synonym is string => typeof synonym === 'string')
+    .map((synonym) => synonym.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 /**
- * Substring match, but short keywords must land on a word boundary.
- * Without that guard "hi" fires inside "philosophy", "highlight" and
- * "architecture", and "sup" fires inside "support" — the greeting would
- * hijack half the dataset.
+ * Keyword hit test.
+ *
+ * Short keywords must land on a word boundary. Without this, "hi" matches
+ * inside "philosophy", "highlight" and "architecture", and "sup" matches inside
+ * "support" — which is how the previous engine answered nonsense questions.
  */
-function hasKeyword(query: string, keyword: string) {
-  const from = query.indexOf(keyword);
-  if (from === -1) return false;
-  if (keyword.length > 3) return true;
-  const before = from === 0 ? ' ' : query[from - 1];
-  const after = query[from + keyword.length] ?? ' ';
-  return !/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after);
-}
-
-/** Longer keywords are stronger evidence: "ancient tech" beats "tech". */
-function scoreOf(query: string, faq: EngineFAQ) {
-  return keywordsOf(faq).reduce((best, keyword) => {
-    if (!hasKeyword(query, keyword)) return best;
-    return Math.max(best, keyword.length + keyword.split(/\s+/).length * 4);
-  }, 0);
+function hasKeyword(query: string, keyword: string): boolean {
+  if (keyword.length <= 3) {
+    let from = 0;
+    while (from <= query.length - keyword.length) {
+      const index = query.indexOf(keyword, from);
+      if (index === -1) return false;
+      const before = index === 0 ? ' ' : query[index - 1];
+      const after = index + keyword.length >= query.length ? ' ' : query[index + keyword.length];
+      if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true;
+      from = index + 1;
+    }
+    return false;
+  }
+  return query.includes(keyword);
 }
 
 /**
- * Counts real back-and-forth. A structured history counts only the visitor's
- * turns; an unrecognised/legacy history (plain strings) falls back to its raw
- * length, which is the `chatHistory.length >= 4` rule.
+ * Score = keyword length + a bonus per word, so a multi-word phrase beats a
+ * single long word. Synonyms contribute slightly less than a literal keyword,
+ * which keeps an exact question match ahead of a loosely related one.
  */
-function countTurns(chatHistory: ChatTurn[] | unknown[]) {
-  const list = Array.isArray(chatHistory) ? chatHistory : [];
-  const entries = list.filter((entry): entry is object => Boolean(entry) && typeof entry === 'object');
-  const structured = entries.some((entry) => 'from' in entry);
-  if (structured) return entries.filter((entry) => (entry as ChatTurn).from === 'user').length;
-  return list.length;
+function scoreOf(query: string, faq: EngineFAQ): number {
+  let best = 0;
+  keywordsOf(faq).forEach((keyword) => {
+    if (hasKeyword(query, keyword)) {
+      best = Math.max(best, keyword.length + keyword.split(/\s+/).length * 6);
+    }
+  });
+  synonymsOf(faq).forEach((synonym) => {
+    if (hasKeyword(query, synonym)) {
+      best = Math.max(best, (synonym.length + synonym.split(/\s+/).length * 6) * 0.85);
+    }
+  });
+  return best;
 }
 
-/** Coerces any FAQ shape (managed or embedded) into the managed shape. */
-function toManagedFAQ(faq: EngineFAQ): ChatbotFAQ | null {
-  const keywords = keywordsOf(faq);
-  const answer = responseOf(faq);
-  if (keywords.length === 0 || !answer) return null;
-  const managed = faq as Partial<ChatbotFAQ>;
+/* ------------------------------------------------------------------ *
+ * Knowledge assembly
+ * ------------------------------------------------------------------ */
+
+/**
+ * An admin FAQ shadows an embedded one when it covers *every* keyword of that
+ * embedded entry.
+ *
+ * The previous rule required only a single overlapping keyword, so adding one
+ * managed answer containing the word "hire" silently deleted the entire
+ * default hiring answer. Requiring full coverage means an override has to be
+ * deliberately complete.
+ */
+function shadowsDefault(managed: ChatbotFAQ[], embedded: EmbeddedFAQ): boolean {
+  const managedKeywords = managed.flatMap((faq) => keywordsOf(faq));
+  return embedded.keywords.length > 0
+    && embedded.keywords.every((keyword) => managedKeywords.includes(keyword));
+}
+
+function isLive(faq: EngineFAQ): boolean {
+  const enabled = 'enabled' in faq ? faq.enabled !== false : true;
+  return enabled && responseOf(faq).length > 0;
+}
+
+function toManagedFAQ(faq: EmbeddedFAQ, index: number): ChatbotFAQ {
   return {
-    id: typeof managed.id === 'string' && managed.id ? managed.id : `managed-${keywords[0].replace(/\W+/g, '-')}`,
-    question: managed.question || keywords[0],
-    answer,
-    keywords,
-    enabled: managed.enabled !== false,
+    id: `default-${index}-${faq.keywords[0]?.replace(/\W+/g, '-') ?? 'faq'}`,
+    question: faq.keywords[0] ?? `Answer ${index + 1}`,
+    answer: faq.response,
+    keywords: faq.keywords,
+    synonyms: faq.synonyms ?? [],
+    category: faq.category ?? 'general',
+    section: faq.section,
+    enabled: true,
   };
 }
 
-/** A knowledge entry plus where it came from (cloud override vs. embedded). */
-interface KnowledgeEntry {
-  faq: EngineFAQ;
-  fromCloud: boolean;
+/** Merges admin FAQs over the embedded set. Both are returned, tagged. */
+export function buildKnowledge(dynamicFAQs?: ChatbotFAQ[] | null): { faq: EngineFAQ; fromCloud: boolean }[] {
+  const managed = Array.isArray(dynamicFAQs) ? dynamicFAQs : [];
+  const shadowed = DEFAULT_CHATBOT_FAQS.filter((embedded) => !shadowsDefault(managed, embedded));
+
+  const combined: { faq: EngineFAQ; fromCloud: boolean }[] = [
+    ...managed.map((entry) => ({ faq: entry, fromCloud: true })),
+    ...shadowed.map((entry) => ({ faq: entry, fromCloud: false })),
+  ];
+
+  return combined.filter(({ faq }) => isLive(faq));
 }
 
-/**
- * The effective knowledge base: admin-managed entries first, then every
- * embedded default they do not shadow.
- *
- * Merging (rather than replacing) matters: adding one custom answer must not
- * silently delete the other 17 default answers, and dismissing a default must
- * only hide that one.
- */
-function buildKnowledge(dynamicFAQs?: EngineFAQ[] | null): KnowledgeEntry[] {
-  // Handing the engine the embedded dataset explicitly is not a cloud override.
-  const isEmbeddedSource = dynamicFAQs === DEFAULT_CHATBOT_FAQS;
-  const managed = isEmbeddedSource ? [] : (Array.isArray(dynamicFAQs) ? dynamicFAQs : [])
-    .map(toManagedFAQ)
-    .filter((faq): faq is ChatbotFAQ => faq !== null);
-
-  const isLive = (entry: KnowledgeEntry) => !isDisabled(entry.faq) && Boolean(responseOf(entry.faq));
-
-  if (managed.length === 0) {
-    return DEFAULT_CHATBOT_FAQS.map((faq) => ({ faq, fromCloud: false })).filter(isLive);
+function countTurns(history: ChatTurn[] | unknown[]): number {
+  if (!Array.isArray(history)) return 0;
+  if (history.some((entry) => typeof entry === 'object' && entry !== null && 'from' in entry)) {
+    return history.filter((entry) => (
+      typeof entry === 'object' && entry !== null && 'from' in entry
+      && (entry as ChatTurn).from === 'user'
+    )).length;
   }
-
-  return [
-    ...managed.map((faq) => ({ faq, fromCloud: true })),
-    ...DEFAULT_CHATBOT_FAQS
-      .filter((embedded) => !managed.some((item) => item.keywords.some((keyword) => embedded.keywords.includes(keyword))))
-      .map((faq) => ({ faq, fromCloud: false })),
-  ].filter(isLive);
+  return history.length;
 }
 
-/**
- * The public, spec-shaped API: message in, reply string out.
- * Admin FAQs win, then the multi-turn DM nudge, then a random witty shrug.
- */
-export function getSmartChatResponse(
-  userMessage: string,
-  chatHistory: ChatTurn[] | unknown[] = [],
-  dynamicFAQs: EngineFAQ[] = DEFAULT_CHATBOT_FAQS,
-): string {
-  return resolveChatReply(userMessage, chatHistory, dynamicFAQs).text;
+function actionsFor(faq: EngineFAQ): ChatbotAction[] | undefined {
+  const section = 'section' in faq ? faq.section : undefined;
+  if (!section) return undefined;
+  const label = section === 'literature' ? 'Read the writing'
+    : section === 'contact' ? 'Get in touch'
+      : section === 'profile' ? 'Read the bio'
+        : section[0].toUpperCase() + section.slice(1);
+  return [{ label: `Take me to ${label.toLowerCase()}`, target: section }];
 }
 
-/** Same decision tree as `getSmartChatResponse`, plus metadata for the UI. */
+/** Resolves a user message, in the visitor's chosen language and tone. */
 export function resolveChatReply(
   userMessage: string,
   chatHistory: ChatTurn[] | unknown[] = [],
-  dynamicFAQs: EngineFAQ[] = DEFAULT_CHATBOT_FAQS,
+  dynamicFAQs?: ChatbotFAQ[] | null,
+  voice?: Partial<VoiceOptions>,
 ): ChatbotReply {
-  const query = typeof userMessage === 'string' ? userMessage.toLowerCase().trim() : '';
+  const query = userMessage.toLowerCase().trim();
   const knowledge = buildKnowledge(dynamicFAQs);
+  const language = voice?.language ?? 'english';
+  const tone = voice?.tone ?? 'professional';
+  const rotation = voice?.rotation ?? 0;
 
-  let best: { entry: KnowledgeEntry; score: number } | null = null;
-  for (const entry of knowledge) {
-    const score = scoreOf(query, entry.faq);
-    if (score > 0 && (!best || score > best.score)) best = { entry, score };
-  }
-
-  if (best) {
+  if (!query) {
     return {
-      text: responseOf(best.entry.faq),
-      kind: 'faq',
-      fromCloud: best.entry.fromCloud,
-      faq: best.entry.fromCloud ? toManagedFAQ(best.entry.faq) ?? undefined : undefined,
+      text: welcomeFor(language, tone, rotation),
+      kind: 'greeting',
+      fromCloud: false,
+      actions: [{ label: 'Portfolio kholo', target: 'portfolio' }],
     };
   }
 
-  if (countTurns(chatHistory) >= 4) {
-    return { text: MULTI_TURN_DM_FALLBACK, kind: 'multi-turn', fromCloud: false };
+  let bestScore = 0;
+  let bestMatch: { faq: EngineFAQ; fromCloud: boolean } | null = null;
+
+  for (const candidate of knowledge) {
+    const score = scoreOf(query, candidate.faq);
+    // Strictly greater, so ties keep the earlier (more specific) entry.
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = candidate;
+    }
+  }
+
+  const turns = countTurns(chatHistory);
+
+  if (bestMatch && bestScore > 0) {
+    const base = responseFor(bestMatch.faq, language);
+    const managedId = 'id' in bestMatch.faq ? bestMatch.faq.id : undefined;
+    return {
+      text: flavourAnswer(base, language, tone, rotation, turns > 2),
+      kind: 'faq',
+      fromCloud: bestMatch.fromCloud,
+      faq: managedId ? (bestMatch.faq as ChatbotFAQ) : undefined,
+      actions: actionsFor(bestMatch.faq),
+    };
+  }
+
+  if (turns >= 5) {
+    return {
+      text: multiTurnFor(language, tone),
+      kind: 'multi-turn',
+      fromCloud: false,
+      actions: [{ label: 'Contact section', target: 'contact' }],
+    };
   }
 
   return {
-    text: WITTY_FALLBACKS[Math.floor(Math.random() * WITTY_FALLBACKS.length)],
+    text: fallbackFor(language, tone, rotation),
     kind: 'fallback',
     fromCloud: false,
   };
 }
 
+/** Text-only convenience wrapper, kept for the existing call signature. */
+export function getSmartChatResponse(
+  userMessage: string,
+  chatHistory: ChatTurn[] | unknown[] = [],
+  dynamicFAQs?: ChatbotFAQ[] | null,
+  voice?: Partial<VoiceOptions>,
+): string {
+  return resolveChatReply(userMessage, chatHistory, dynamicFAQs, voice).text;
+}
+
 /**
- * Merges admin-managed entries over the embedded defaults, so the bot always
- * answers with the richest available dataset and the admin can override,
- * disable or extend any single line.
+ * The admin list: managed entries first (in their stored order), then the
+ * embedded defaults that no managed entry overrides. `managed: false` marks an
+ * entry the admin has not taken ownership of yet.
  */
 export function mergeChatbotFAQs(managed: ChatbotFAQ[] | null | undefined): ChatbotFAQ[] {
-  return buildKnowledge(managed)
-    .map(({ faq }) => toManagedFAQ(faq))
-    .filter((faq): faq is ChatbotFAQ => faq !== null);
+  const list = Array.isArray(managed) ? managed : [];
+  return [
+    ...list.map((faq) => ({ ...faq, managed: true as const })),
+    ...DEFAULT_CHATBOT_FAQS
+      .filter((embedded) => !shadowsDefault(list, embedded))
+      .map(toManagedFAQ)
+      .map((faq) => ({ ...faq, managed: false as const })),
+  ];
 }

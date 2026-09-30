@@ -1,212 +1,980 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Serif:ital,wght@0,400;0,500;1,400&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ==================================================================
+   DESIGN TOKENS
+
+   The single source of truth. `tailwind.config.js` holds the same
+   values as literal scales; these variables exist for the handful of
+   places that must read a token at runtime (canvas painting, inline
+   styles, generated gradients).
+
+   The previous stylesheet reconciled a dark-authored component tree
+   with a light theme through a `.premium-bg`-scoped block that
+   rewrote Tailwind utilities by attribute selector. It is gone. That
+   block silently dropped opacity modifiers, and its substring rules
+   (`[class*="text-cyan-"]`) beat properly-authored hover states, so
+   several buttons rendered permanently in their hover colour.
+   ================================================================== */
 :root {
-  --navy-deep: #f5f5f7;
-  --navy: #ffffff;
-  --charcoal: #ffffff;
-  --silver: #86868b;
-  --off-white: #1d1d1f;
-  --ink: #1d1d1f;
-  --muted: #68686d;
-  --line: #e5e5ea;
-  --cyan-accent: #147c8a;
-  --purple-accent: #586a8f;
-  --rose-accent: #a34553;
+  /* Surfaces */
+  --page: #f6f7f9;
+  --page-2: #eef0f4;
+  --surface: #ffffff;
+  --surface-2: #fafbfc;
+  --line: #e2e6ec;
+  --line-strong: #cdd4de;
+
+  /* Text */
+  --ink: #101219;
+  --ink-2: #35394a;
+  --muted: #626a7d;
+  --faint: #8d94a6;
+
+  /* Accents */
+  --accent: #0a82bd;
+  --accent-soft: rgba(10, 130, 189, 0.1);
+  --iris: #6146df;
+  --iris-soft: rgba(97, 70, 223, 0.1);
+  --ember: #e64f37;
+  --ember-soft: rgba(230, 79, 55, 0.1);
+  --jade: #0f7a5a;
+
+  /* Glass. iOS and coarse-pointer fallbacks below drop the blur and
+     raise the surface alpha instead of rendering a transparent panel. */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-strong: rgba(255, 255, 255, 0.9);
+  --glass-border: rgba(255, 255, 255, 0.85);
+  --glass-blur: 18px;
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-micro: 140ms;
+  --dur-hover: 220ms;
+  --dur-modal: 320ms;
+  --dur-drawer: 380ms;
+  --dur-reveal: 620ms;
+
+  /* Depth. Never applied to an ancestor of a `position: fixed`
+     descendant — see the note on `.gpu-accelerated`. */
+  --z-nav: 1000;
+  --z-raised: 50;
+  --z-dialog: 9200;
+  --z-admin: 9500;
+  --z-toast: 9999;
 }
 
-* {
-  -webkit-tap-highlight-color: transparent;
-}
+/* ==================================================================
+   BASE
+   ================================================================== */
+
+* { -webkit-tap-highlight-color: transparent; }
 
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: 90px;
+  scroll-padding-top: 96px;
   -webkit-text-size-adjust: 100%;
-  /* `hidden` first for legacy engines, then `clip`: clipping does not turn the
-     root into a scroll container, so `position: fixed` descendants and mobile
-     momentum scrolling keep working normally. */
+  /* `hidden` first for legacy engines, then `clip`: clipping does not turn
+     the root into a scroll container, so `position: fixed` descendants and
+     mobile momentum scrolling keep working. */
   overflow-x: hidden;
   overflow-x: clip;
 }
 
 body {
-  font-family: 'Inter', 'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', sans-serif;
-  background: #f5f5f7;
-  color: var(--off-white);
+  font-family: theme('fontFamily.sans');
+  background-color: var(--page);
+  color: var(--ink);
   cursor: auto;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* No transform / will-change on <body>, deliberately. Promoting it makes it
-     the containing block for every `position: fixed` descendant (nav, reading
-     bar, all modals) and forces a layer as tall as the whole document, which
-     is the classic source of scroll jank and of a pinned nav that scrolls
-     away. Scrolling is already compositor-driven without it. */
+  /* Deliberately NO transform or will-change here. Promoting <body> makes it
+     the containing block for every `position: fixed` descendant (nav, dialogs,
+     the chatbot) and forces a layer as tall as the document, which strands
+     overlays off-screen on long pages. Scrolling is already compositor-driven. */
 }
 
-/* Applied by lockPageScroll() — overflow-based lock, never position:fixed. */
 body.scroll-locked {
   overflow: hidden;
   touch-action: none;
   overscroll-behavior: none;
 }
 
-/* Consistent vertical rhythm with much tighter spacing on phones, which is
-   what previously produced the large, awkward empty gaps between sections. */
+/* Visible keyboard focus everywhere. `:focus-visible` so a mouse click never
+   draws a ring, but Tab always does. Never suppress this on inputs. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ==================================================================
+   PAGE ATMOSPHERE
+
+   Layered entirely with gradients and one masked noise texture, so
+   the whole thing paints in a single layer and costs no extra
+   compositing. No blurred fixed orbs: those are the most expensive
+   thing on a mobile GPU and the least legible.
+   ================================================================== */
+
+.site-shell {
+  position: relative;
+  min-height: 100vh;
+  isolation: isolate;
+}
+
+.site-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 8% -8%, rgba(10, 130, 189, 0.09), transparent 62%),
+    radial-gradient(52rem 38rem at 94% 22%, rgba(97, 70, 223, 0.08), transparent 60%),
+    radial-gradient(46rem 34rem at 50% 108%, rgba(230, 79, 55, 0.05), transparent 58%),
+    linear-gradient(180deg, #ffffff 0%, var(--page) 42%, var(--page-2) 100%);
+}
+
+/* Film grain. `display: none` for coarse pointers and reduced motion: on a
+   large surface it is a full-screen repaint on every scroll tick. */
+.site-grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+@media (max-width: 1023px) { .site-grain { display: none; } }
+
+/* A faint structural grid that fades out before it can compete with content. */
+.site-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.55;
+  background-image:
+    linear-gradient(to right, rgba(16, 18, 25, 0.028) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(16, 18, 25, 0.028) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(70% 55% at 50% 0%, #000 0%, transparent 78%);
+  mask-image: radial-gradient(70% 55% at 50% 0%, #000 0%, transparent 78%);
+}
+
+@media (max-width: 767px) { .site-grid { display: none; } }
+
+/**
+ * Two very slow drifting accent fields behind the content.
+ *
+ * Painted on the fixed background layer with transform-only animation, so the
+ * whole thing stays one composited layer and never triggers layout. The
+ * durations are long enough (26s/34s) that the drift reads as atmosphere
+ * rather than movement. Both are dropped on coarse pointers, where a
+ * full-viewport animated gradient is the single most expensive thing on the
+ * page and the least noticed.
+ */
+.site-drift {
+  position: fixed;
+  inset: -20%;
+  z-index: -2;
+  pointer-events: none;
+  opacity: 0.75;
+  will-change: transform;
+}
+.site-drift::before,
+.site-drift::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+}
+.site-drift::before {
+  width: 46rem;
+  height: 46rem;
+  top: 8%;
+  left: 6%;
+  background: radial-gradient(circle, rgba(10, 130, 189, 0.14), transparent 68%);
+  animation: drift-a 34s var(--ease-in-out-quart) infinite alternate;
+}
+.site-drift::after {
+  width: 40rem;
+  height: 40rem;
+  bottom: 4%;
+  right: 8%;
+  background: radial-gradient(circle, rgba(97, 70, 223, 0.12), transparent 68%);
+  animation: drift-b 26s var(--ease-in-out-quart) infinite alternate;
+}
+@keyframes drift-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(6%, 4%, 0) scale(1.12); }
+}
+@keyframes drift-b {
+  from { transform: translate3d(0, 0, 0) scale(1.08); }
+  to   { transform: translate3d(-5%, -5%, 0) scale(1); }
+}
+
+@media (max-width: 1023px), (hover: none), (pointer: coarse) {
+  .site-drift { display: none; }
+}
+
+/* ==================================================================
+   SECTION RHYTHM
+   ================================================================== */
+
 .section-shell {
   position: relative;
-  padding-top: 1.5rem;
-  padding-bottom: 1.5rem;
+  padding-block: 3.5rem;
 }
 
-@media (min-width: 640px) {
-  .section-shell { padding-top: 2.5rem; padding-bottom: 2.5rem; }
+@media (min-width: 640px) { .section-shell { padding-block: 5rem; } }
+@media (min-width: 1024px) { .section-shell { padding-block: 7.5rem; } }
+
+/* The luminous rule between sections. Replaces bare whitespace as the
+   primary rhythm device. */
+.section-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: var(--shell, 72rem);
+  margin: 0 auto;
+}
+.section-rule::before,
+.section-rule::after {
+  content: '';
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, transparent, var(--line-strong), transparent);
+}
+.section-rule-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+  flex: none;
 }
 
-@media (min-width: 1024px) {
-  .section-shell { padding-top: 4rem; padding-bottom: 4rem; }
-}
-
-@media (hover: none), (pointer: coarse) {
-  body { cursor: auto; }
-  /* Disable heavy effects on touch devices for performance */
-  .hero-atmosphere { display: none; }
-  .aurora-orb { display: none; }
-}
-
-.font-display {
-  font-family: 'Plus Jakarta Sans', 'Inter', 'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', sans-serif;
-}
-
-/* === Premium Background === */
-.premium-bg {
-  background:
-    radial-gradient(ellipse 70% 50% at 10% 0%, rgba(0, 113, 227, 0.035), transparent 65%),
-    radial-gradient(ellipse 60% 45% at 90% 38%, rgba(31, 145, 145, 0.025), transparent 65%),
-    linear-gradient(180deg, #ffffff 0%, #f5f5f7 60%, #ffffff 100%);
-}
-
-/* Animated aurora gradient orbs */
-.aurora-orb {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0;
+/**
+ * A slow travelling highlight along the divider, so section breaks feel
+ * connected rather than merely separated. Transform-only, and long enough that
+ * it reads as a slow sweep rather than a blink.
+ */
+.section-rule::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
   pointer-events: none;
-  z-index: 0;
+  background: linear-gradient(90deg, transparent, rgba(10, 130, 189, 0.55), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: rule-sweep 9s var(--ease-in-out-quart) infinite;
 }
-.aurora-orb { display: none; }
-
-.aurora-1 {
-  width: 500px; height: 500px;
-  background: radial-gradient(circle, rgba(34, 211, 238, 0.3), transparent 70%);
-  top: -100px; left: -100px;
-  animation: float-orb 20s ease-in-out infinite;
-}
-
-.aurora-2 {
-  width: 400px; height: 400px;
-  background: radial-gradient(circle, rgba(167, 139, 250, 0.25), transparent 70%);
-  top: 40%; right: -100px;
-  animation: float-orb 25s ease-in-out infinite reverse;
+.section-rule { position: relative; overflow: hidden; }
+@keyframes rule-sweep {
+  0%       { background-position: -45% 0; opacity: 0; }
+  35%, 65% { opacity: 1; }
+  100%     { background-position: 105% 0; opacity: 0; }
 }
 
-.aurora-3 {
-  width: 450px; height: 450px;
-  background: radial-gradient(circle, rgba(251, 113, 133, 0.2), transparent 70%);
-  bottom: -100px; left: 30%;
-  animation: float-orb 30s ease-in-out infinite;
+.shell {
+  width: 100%;
+  max-width: var(--shell, 72rem);
+  margin-inline: auto;
+  padding-inline: 1.25rem;
+}
+@media (min-width: 640px) { .shell { padding-inline: 1.75rem; } }
+
+/* ==================================================================
+   TYPOGRAPHY
+   ================================================================== */
+
+.font-display { font-family: theme('fontFamily.display'); }
+
+/* The eyebrow label that opens every section. Previously copy-pasted
+   verbatim into seven files. */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.eyebrow::before {
+  content: '';
+  width: 1.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent));
 }
 
-@keyframes float-orb {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(50px, 80px) scale(1.1); }
-  66% { transform: translate(-30px, 40px) scale(0.95); }
+.section-title {
+  font-family: theme('fontFamily.display');
+  font-size: clamp(1.55rem, 3.4vw, 2.35rem);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.022em;
+  color: var(--ink);
 }
 
-/* === Glassmorphism === */
+.section-lede {
+  margin-top: 0.875rem;
+  max-width: 42rem;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
+/* Gradient used for the name and for accent numerals only. Never for body
+   text: a clipped gradient cannot be selected or read by assistive tech. */
+.gradient-ink {
+  background: linear-gradient(112deg, #101219 8%, #2c4a63 52%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+.gradient-accent {
+  background: linear-gradient(120deg, var(--accent), var(--iris));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Reading face for long-form literature. */
+.literary-body {
+  font-family: theme('fontFamily.literary');
+  font-size: 1.0625rem;
+  line-height: 1.95;
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+  font-synthesis: none;
+}
+.literary-body > p + p { margin-top: 1.15em; }
+
+.drop-cap::first-letter {
+  float: left;
+  font-family: theme('fontFamily.display');
+  font-size: 3.4em;
+  line-height: 0.82;
+  font-weight: 700;
+  padding: 0.06em 0.12em 0 0;
+  color: var(--accent);
+}
+
+/* ==================================================================
+   SURFACES
+   ================================================================== */
+
 .glass {
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  box-shadow: 0 2px 10px rgba(29, 29, 31, 0.045);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.5);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 1px 2px rgba(12, 12, 17, 0.04), 0 8px 24px -12px rgba(12, 12, 17, 0.14);
 }
 
 .glass-strong {
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 12px 36px rgba(29, 29, 31, 0.1);
+  background: var(--glass-bg-strong);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 2px 4px rgba(12, 12, 17, 0.05), 0 18px 44px -20px rgba(12, 12, 17, 0.22);
 }
 
-.glass-card {
-  background: #ffffff;
-  border: 1px solid var(--line);
-  box-shadow: 0 2px 10px rgba(29, 29, 31, 0.045);
-  transition: border-color 0.28s ease, box-shadow 0.28s ease, transform 0.28s ease;
-}
-
-.glass-card:hover {
-  border-color: rgba(0, 113, 227, 0.22);
-  box-shadow: 0 8px 24px rgba(29, 29, 31, 0.09);
-}
-
-/* Glowing border */
-.glow-border {
+/* The base content card. One definition, used everywhere. */
+.card {
   position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 1.125rem;
+  box-shadow: 0 1px 2px rgba(12, 12, 17, 0.04), 0 8px 24px -12px rgba(12, 12, 17, 0.14);
+  transition:
+    border-color var(--dur-hover) var(--ease-out-expo),
+    box-shadow var(--dur-hover) var(--ease-out-expo),
+    transform var(--dur-hover) var(--ease-out-expo);
 }
-.glow-border::before {
+
+/* Interior highlight along the top edge — the detail that reads as
+   "lit from above" rather than "flat white box". */
+.card-sheen::before {
   content: '';
   position: absolute;
-  inset: -1px;
+  inset: 0 0 auto;
+  height: 1px;
   border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(135deg, rgba(34, 211, 238, 0.4), rgba(167, 139, 250, 0.3), rgba(251, 113, 133, 0.3));
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  opacity: 0;
-  transition: opacity 0.4s;
-}
-.glow-border:hover::before {
-  opacity: 1;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.95), transparent);
+  opacity: 0.7;
+  pointer-events: none;
 }
 
-/* === Custom cursor (DOM + rAF/LERP, portalled to <body>) === */
-/* `position: fixed` is only viewport-relative because this layer is rendered
-   as a direct child of <body>. Do not move it back inside a transformed app
-   wrapper, or it will scroll away with the document. */
+.card-interactive { cursor: pointer; }
+.card-interactive:hover {
+  border-color: rgba(10, 130, 189, 0.3);
+  box-shadow: 0 2px 4px rgba(12, 12, 17, 0.05), 0 18px 44px -20px rgba(12, 12, 17, 0.22);
+  transform: translate3d(0, -3px, 0);
+}
+.card-interactive:active { transform: translate3d(0, -1px, 0); }
+
+/* Pointer-follow highlight. `--mx/--my` are written by TiltCard from a
+   single rAF-throttled pointermove; the gradient itself is cheap. */
+.card-lit::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-hover) var(--ease-out-expo);
+  background: radial-gradient(
+    22rem 22rem at var(--mx, 50%) var(--my, 50%),
+    rgba(10, 130, 189, 0.09),
+    transparent 62%
+  );
+}
+.card-lit:hover::after { opacity: 1; }
+
+.card-dark {
+  background: linear-gradient(158deg, #1c1f2b 0%, #12141c 100%);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #f2f4f8;
+}
+
+/* 3D depth. The tilt is written to custom properties by TiltCard and consumed
+   by a PSEUDO-element, never by the card itself: putting a transform on the
+   card would make it the containing block for any fixed descendant, which is
+   the failure mode documented on `.gpu-accelerated`. */
+.card-tilt {
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --mx: 50%;
+  --my: 50%;
+  position: relative;
+  transform-style: preserve-3d;
+}
+@media (hover: hover) and (pointer: fine) {
+  .card-tilt::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y));
+    transition: transform 260ms var(--ease-out-expo);
+    pointer-events: none;
+    z-index: -1;
+  }
+}
+
+/* ==================================================================
+   CONTROLS
+   ================================================================== */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;              /* touch target floor */
+  padding: 0.7rem 1.4rem;
+  border-radius: 0.875rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  transition:
+    transform var(--dur-hover) var(--ease-out-quint),
+    box-shadow var(--dur-hover) var(--ease-out-expo),
+    background-color var(--dur-hover) var(--ease-out-expo),
+    border-color var(--dur-hover) var(--ease-out-expo),
+    color var(--dur-hover) var(--ease-out-expo);
+}
+.btn:active { transform: translate3d(0, 1px, 0) scale(0.985); }
+.btn:disabled { opacity: 0.5; pointer-events: none; }
+
+.btn-primary {
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  background: linear-gradient(135deg, #0c6899 0%, #6146df 100%);
+  border-color: rgba(10, 130, 189, 0.4);
+  box-shadow: 0 1px 2px rgba(12, 12, 17, 0.08), 0 12px 28px -14px rgba(12, 79, 126, 0.6);
+}
+/* Light sweep on hover. Transform-only, so it never triggers layout. */
+.btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.26) 50%, transparent 70%);
+  transform: translate3d(-100%, 0, 0);
+  transition: transform 620ms var(--ease-out-expo);
+}
+.btn-primary:hover::before { transform: translate3d(100%, 0, 0); }
+.btn-primary:hover { box-shadow: 0 2px 4px rgba(12, 12, 17, 0.1), 0 18px 38px -14px rgba(12, 79, 126, 0.7); }
+
+/**
+ * The single hero CTA breathes. Deliberately applied to one button rather than
+ * every primary: a site where all of them pulse reads as an alarm, not a
+ * premium accent.
+ *
+ * The pulse animates box-shadow only — never transform or opacity on the
+ * element itself — so it cannot shift layout or fight the press animation. The
+ * global reduced-motion rule collapses the duration to nothing.
+ */
+.btn-hero {
+  animation: btn-breathe 4.8s var(--ease-in-out-quart) infinite;
+}
+@keyframes btn-breathe {
+  0%, 100% { box-shadow: 0 1px 2px rgba(12, 12, 17, 0.08), 0 12px 28px -14px rgba(12, 79, 126, 0.55); }
+  50%      { box-shadow: 0 1px 2px rgba(12, 12, 17, 0.08), 0 12px 28px -12px rgba(12, 79, 126, 0.7), 0 0 0 4px rgba(10, 130, 189, 0.08); }
+}
+.btn-hero:hover { animation-play-state: paused; }
+
+.btn-secondary {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: 0 1px 2px rgba(12, 12, 17, 0.04);
+}
+.btn-secondary:hover {
+  border-color: rgba(10, 130, 189, 0.4);
+  color: var(--accent);
+  box-shadow: 0 2px 4px rgba(12, 12, 17, 0.05), 0 14px 30px -16px rgba(10, 130, 189, 0.4);
+}
+
+.btn-ghost {
+  color: var(--ink-2);
+  background: transparent;
+  border-color: var(--line);
+}
+.btn-ghost:hover { background: rgba(16, 18, 25, 0.035); border-color: var(--line-strong); }
+
+.btn-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 0.75rem;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  transition: all var(--dur-hover) var(--ease-out-expo);
+}
+.btn-icon:hover {
+  color: var(--accent);
+  border-color: rgba(10, 130, 189, 0.36);
+  box-shadow: 0 8px 20px -10px rgba(10, 130, 189, 0.42);
+}
+.btn-icon:active { transform: translate3d(0, 1px, 0) scale(0.94); }
+.btn-icon[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(10, 130, 189, 0.28);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: rgba(16, 18, 25, 0.03);
+  border: 1px solid var(--line);
+  transition: all var(--dur-hover) var(--ease-out-expo);
+}
+.chip:hover { border-color: var(--line-strong); background: rgba(16, 18, 25, 0.05); }
+.chip:active { transform: translate3d(0, 1px, 0); }
+.chip-accent {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(10, 130, 189, 0.2);
+}
+.chip-iris { color: var(--iris); background: var(--iris-soft); border-color: rgba(97, 70, 223, 0.18); }
+.chip-ember { color: var(--ember); background: var(--ember-soft); border-color: rgba(230, 79, 55, 0.18); }
+
+/* Filter pill. `aria-pressed` drives the selected state so it is
+   correct without JS. */
+.filter-pill {
+  min-height: 36px;
+  padding: 0.4rem 0.9rem;
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all var(--dur-hover) var(--ease-out-expo);
+}
+.filter-pill:hover { color: var(--ink); background: rgba(16, 18, 25, 0.04); }
+.filter-pill[aria-pressed='true'] {
+  color: #ffffff;
+  background: var(--ink);
+  border-color: var(--ink);
+  box-shadow: 0 6px 18px -10px rgba(16, 18, 25, 0.7), 0 0 0 3px rgba(10, 130, 189, 0.12);
+}
+.filter-pill[aria-pressed='true']:hover { background: var(--ink-2); }
+
+.field {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.9rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  transition: border-color var(--dur-hover) var(--ease-out-expo), box-shadow var(--dur-hover) var(--ease-out-expo);
+}
+.field::placeholder { color: var(--faint); }
+.field:focus {
+  outline: none;
+  border-color: rgba(10, 130, 189, 0.55);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* Restore the visible ring for keyboard users. The old stylesheet used
+   `:focus`, which removed it for keyboard too. */
+.field:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+textarea.field { min-height: 7rem; resize: vertical; line-height: 1.6; }
+
+.label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--ink-2);
+}
+
+/* ==================================================================
+   DIALOGS
+   ================================================================== */
+
+.overlay-scrim {
+  background: rgba(14, 16, 24, 0.44);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: overlay-fade var(--dur-modal) var(--ease-out-expo) both;
+}
+@keyframes overlay-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.overlay-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 20px -8px rgba(12, 12, 17, 0.16), 0 32px 80px -36px rgba(12, 12, 17, 0.38);
+  animation: overlay-rise var(--dur-drawer) var(--ease-out-expo) both;
+}
+@media (min-width: 640px) { .overlay-panel { animation-name: overlay-pop; } }
+
+@keyframes overlay-rise {
+  from { opacity: 0; transform: translate3d(0, 32px, 0); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes overlay-pop {
+  from { opacity: 0; transform: translate3d(0, 12px, 0) scale(0.975); }
+  to { opacity: 1; transform: none; }
+}
+
+.overlay-header { background: var(--surface-2); }
+
+.overlay-close {
+  color: var(--muted);
+  background: rgba(16, 18, 25, 0.04);
+  border: 1px solid var(--line);
+  transition: all var(--dur-hover) var(--ease-out-expo);
+}
+.overlay-close:hover { color: var(--ink); background: rgba(16, 18, 25, 0.08); }
+
+/* ==================================================================
+   NAVIGATION
+   ================================================================== */
+
+.site-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-nav);
+  padding-block: 1rem;
+  transition: padding var(--dur-drawer) var(--ease-out-expo);
+}
+.site-nav[data-scrolled='true'] { padding-block: 0.5rem; }
+
+.nav-shell {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 1rem;
+  transition: all var(--dur-drawer) var(--ease-out-expo);
+}
+.site-nav[data-scrolled='true'] .nav-shell {
+  border-radius: 0.875rem;
+  box-shadow: 0 2px 4px rgba(12, 12, 17, 0.05), 0 18px 44px -20px rgba(12, 12, 17, 0.24);
+}
+
+.nav-link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.625rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--muted);
+  transition: color var(--dur-hover) var(--ease-out-expo), background-color var(--dur-hover) var(--ease-out-expo);
+}
+.nav-link:hover { color: var(--ink); background: rgba(16, 18, 25, 0.04); }
+.nav-link[aria-current='true'] { color: var(--accent); background: var(--accent-soft); }
+
+/* The sliding indicator. One element, moved with a transform, rather than a
+   border on every item. */
+.nav-indicator {
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  height: 2px;
+  border-radius: 9999px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  transition: transform var(--dur-drawer) var(--ease-out-expo), width var(--dur-drawer) var(--ease-out-expo);
+  will-change: transform, width;
+}
+
+.monogram {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  border-radius: 0.625rem;
+  font-family: theme('fontFamily.display');
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+  background: linear-gradient(140deg, #0c6899, #6146df);
+  box-shadow: 0 4px 12px -6px rgba(12, 79, 126, 0.7);
+  transition: transform var(--dur-hover) var(--ease-out-quint);
+}
+.monogram:hover { transform: translate3d(0, -1px, 0) scale(1.04); }
+
+/* ==================================================================
+   REVEAL
+
+   State lives in CSS; JavaScript only sets `data-revealed`. If the
+   stylesheet fails, content is visible rather than invisible.
+   ================================================================== */
+[data-reveal] {
+  opacity: 0;
+  transition:
+    opacity var(--dur-reveal) var(--ease-out-expo),
+    transform var(--dur-reveal) var(--ease-out-expo);
+  will-change: opacity, transform;
+}
+[data-reveal='bottom'] { transform: translate3d(0, 26px, 0); }
+[data-reveal='left'] { transform: translate3d(-22px, 0, 0); }
+[data-reveal='right'] { transform: translate3d(22px, 0, 0); }
+[data-reveal='none'] { transform: none; }
+
+[data-reveal][data-revealed='true'] {
+  opacity: 1;
+  transform: none;
+  /* Release the compositor layer once the animation is done. */
+  will-change: auto;
+}
+
+/* ==================================================================
+   HERO ATMOSPHERE
+   ================================================================== */
+.hero-atmosphere-trace {
+  fill: none;
+  stroke: rgba(10, 130, 189, 0.14);
+  stroke-width: 1;
+  stroke-dasharray: 2 11;
+}
+.hero-atmosphere-trace-soft {
+  stroke: rgba(97, 70, 223, 0.1);
+  stroke-dasharray: 1 14;
+}
+.hero-particle {
+  fill: rgba(10, 130, 189, 0.42);
+  filter: drop-shadow(0 0 5px rgba(10, 130, 189, 0.45));
+}
+
+/* ==================================================================
+   PROGRESS
+   ================================================================== */
+
+.progress-track {
+  height: 3px;
+  background: rgba(16, 18, 25, 0.07);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--accent), var(--iris));
+  transform-origin: left center;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: 1.125rem;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.empty-state-title { font-weight: 600; color: var(--ink-2); }
+.empty-state-body { font-size: 0.875rem; max-width: 30rem; line-height: 1.65; }
+
+.skeleton {
+  background: linear-gradient(100deg, rgba(16, 18, 25, 0.04) 30%, rgba(16, 18, 25, 0.08) 50%, rgba(16, 18, 25, 0.04) 70%);
+  background-size: 220% 100%;
+  animation: shimmer 2.4s linear infinite;
+  border-radius: 0.75rem;
+}
+@keyframes shimmer { from { background-position: -160% 0; } to { background-position: 260% 0; } }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.4375rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--muted);
+  background: rgba(16, 18, 25, 0.035);
+  border: 1px solid var(--line);
+}
+
+.divider { height: 1px; background: var(--line); border: 0; }
+
+/* Text sitting on an image or a saturated gradient. */
+.on-media { color: #ffffff; }
+.on-media * { color: inherit; }
+.on-media-shade {
+  background: linear-gradient(to top, rgba(10, 12, 18, 0.82) 0%, rgba(10, 12, 18, 0.28) 55%, transparent 100%);
+}
+
+/* ==================================================================
+   GPU LAYERS
+
+   Only ever applied to small, already-`position: fixed` elements. A
+   transform here makes the element the containing block for every
+   `position: fixed` descendant, so this class must never land on a
+   page-level wrapper or a `<section>`.
+   ================================================================== */
+/* ==================================================================
+   CARD ACTIONS
+
+   A <button> may only contain phrasing content, so a whole card cannot
+   legally be a button — nesting the card's <div>s, heading and paragraph
+   inside one is invalid HTML even though every browser renders it.
+
+   The accessible pattern is a real control placed in the card's heading,
+   with a transparent overlay that makes the rest of the card clickable.
+   The control stays in the tab order and keeps its own accessible name;
+   the overlay is pure decoration.
+
+   `:hover` on the card still works because the overlay is its descendant,
+   and `:focus-within` carries the focus state, so no `:has()` is needed.
+   ================================================================== */
+.card-action {
+  text-align: inherit;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+/* The stretched hit area. `z-index` lifts it above the card's own content so a
+   click anywhere lands on the control, while the text stays selectable. */
+.card-action::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+.card-action:focus-visible { outline: none; }
+.card:focus-within {
+  border-color: rgba(10, 130, 189, 0.3);
+  box-shadow: 0 2px 4px rgba(12, 12, 17, 0.05), 0 18px 44px -20px rgba(12, 12, 17, 0.22);
+}
+/* The border lights up the moment the inner control is pressed, which works
+   without `:has()` and therefore without any browser-support question. */
+@supports selector(:has(*)) {
+  .card:has(.card-action:active) { border-color: rgba(10, 130, 189, 0.34); }
+}
+@media (hover: hover) and (pointer: fine) {
+  .card:focus-within { transform: translate3d(0, -3px, 0); }
+}
+
+.gpu-accelerated {
+  transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* ==================================================================
+   CUSTOM CURSOR
+
+   `position: fixed` works here only because this layer is portalled to
+   <body>. Moving it inside any transformed wrapper silently turns these
+   into document-relative elements and the cursor scrolls away.
+
+   Nothing here may take pointer input: clicks, taps, hovers, text
+   selection and wheel events must always reach the real UI underneath.
+   ================================================================== */
 .cc-root {
   position: fixed;
   top: 0;
   left: 0;
-  /* Zero-size anchor: it never becomes a full-viewport hit target. */
+  /* Zero-size anchor: never a full-viewport hit target. */
   width: 0;
   height: 0;
   z-index: 2147483647;
-  /* Clicks, taps, hovers, text selection and wheel events always pass through. */
   pointer-events: none !important;
   user-select: none;
   -webkit-user-select: none;
-  /* Fade out when the pointer leaves the window... */
   opacity: 0;
-  transition: opacity 160ms cubic-bezier(0.4, 0, 1, 1);
+  transition: opacity var(--dur-hover) var(--ease-out-expo);
 }
+/* Reappears instantly on re-entry, with no fade lag. */
+.cc-root.is-live { opacity: 1; transition: none; }
 
-/* ...and reappear instantly, with no fade lag, on re-entry. */
-.cc-root.is-live {
-  opacity: 1;
-  transition: none;
-}
-
-/* Nothing inside the cursor may ever take pointer input, including a future
-   pseudo-element. */
 .cc-root,
 .cc-root *,
 .cc-root *::before,
@@ -221,313 +989,328 @@ body.scroll-locked {
   position: fixed;
   top: 0;
   left: 0;
-  pointer-events: none !important;
-  /* JS writes `transform` every frame: it is the only animated property, and
-     it is deliberately absent from every transition list below so the rAF
-     loop never fights a CSS animation. */
+  /* JS writes `transform` every frame; it is the only animated property and is
+     deliberately absent from every transition below, so the rAF loop never
+     fights a CSS animation. */
   transform: translate3d(0, 0, 0) translate(-50%, -50%);
   will-change: transform;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  opacity: 1;
+  border-radius: 9999px;
 }
 
 .cc-dot {
-  width: 6px;
-  height: 6px;
-  background: #1a1a2e;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(26, 26, 46, 0.2), 0 0 8px rgba(26, 26, 46, 0.4);
-  transition: width 200ms cubic-bezier(0.16, 1, 0.3, 1),
-              height 200ms cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  width: 5px;
+  height: 5px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(10, 130, 189, 0.22), 0 0 10px rgba(10, 130, 189, 0.5);
+  transition:
+    width var(--dur-hover) var(--ease-out-expo),
+    height var(--dur-hover) var(--ease-out-expo),
+    opacity var(--dur-hover) var(--ease-out-expo);
 }
 
 .cc-ring {
-  width: 36px;
-  height: 36px;
-  border: 1.5px solid rgba(26, 26, 46, 0.35);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.15) 0%, transparent 50%),
-    radial-gradient(circle at 70% 70%, rgba(26, 26, 46, 0.05) 0%, transparent 40%);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow:
-    0 0 12px rgba(26, 26, 46, 0.15),
-    inset 0 0 8px rgba(255, 255, 255, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  transition: width 250ms cubic-bezier(0.16, 1, 0.3, 1),
-              height 250ms cubic-bezier(0.16, 1, 0.3, 1),
-              border-color 250ms cubic-bezier(0.16, 1, 0.3, 1),
-              background-color 250ms cubic-bezier(0.16, 1, 0.3, 1),
-              background-image 250ms cubic-bezier(0.16, 1, 0.3, 1),
-              box-shadow 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  width: 30px;
+  height: 30px;
+  border: 1.5px solid rgba(10, 130, 189, 0.42);
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.5), transparent 55%);
+  transition:
+    width var(--dur-hover) var(--ease-out-expo),
+    height var(--dur-hover) var(--ease-out-expo),
+    border-color var(--dur-hover) var(--ease-out-expo),
+    background-color var(--dur-hover) var(--ease-out-expo),
+    box-shadow var(--dur-hover) var(--ease-out-expo);
 }
 
 /* Hover state is a class on the root, derived from the event target. No
    listener ever cancels or stops the mouse event. */
-.cc-root.is-hover .cc-dot {
-  width: 0;
-  height: 0;
-  opacity: 0;
-}
-
+.cc-root.is-hover .cc-dot { width: 0; height: 0; opacity: 0; }
 .cc-root.is-hover .cc-ring {
-  width: 56px;
-  height: 56px;
-  border-color: rgba(26, 26, 46, 0.55);
-  background:
-    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.2) 0%, transparent 50%),
-    radial-gradient(circle, rgba(26, 26, 46, 0.08) 0%, transparent 65%);
-  box-shadow:
-    0 0 20px rgba(26, 26, 46, 0.25),
-    inset 0 0 12px rgba(255, 255, 255, 0.12),
-    inset 0 2px 0 rgba(255, 255, 255, 0.2),
-    0 0 32px rgba(26, 26, 46, 0.18);
+  width: 48px;
+  height: 48px;
+  border-color: var(--accent);
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.75), transparent 60%), rgba(10, 130, 189, 0.06);
+  box-shadow: 0 0 0 6px var(--accent-soft), 0 0 22px rgba(10, 130, 189, 0.28);
 }
 
-/* Opt-in blend-mode inversion. Off by default on purpose: `mix-blend-mode`
-   forces the browser to composite everything beneath the cursor into a
-   single blend surface, which is a measurable frame-rate cost while scrolling.
-   Enable by adding data-cursor-blend to <html>. */
-[data-cursor-blend] .cc-dot,
-[data-cursor-blend] .cc-ring {
-  mix-blend-mode: difference;
-}
-
-/* The native cursor is hidden only while the custom layer is live; the class
-   is added by CustomCursor and removed the moment it unmounts or when the
-   device is touch-only / reduced-motion. */
+/* The native cursor is hidden only while this layer is live. */
 html.custom-cursor-active,
-html.custom-cursor-active body {
-  cursor: none !important;
-}
-
-/* Neutralise legacy cursor utilities so the custom cursor is the only pointer. */
-html.custom-cursor-active [class*="cursor-pointer"],
-html.custom-cursor-active [class*="cursor-default"] {
-  cursor: none !important;
-}
-
-/* Keep the text caret usable while typing. */
+html.custom-cursor-active body { cursor: none !important; }
+html.custom-cursor-active [class*='cursor-pointer'],
+html.custom-cursor-active [class*='cursor-default'] { cursor: none !important; }
+/* The text caret stays usable while typing. */
 html.custom-cursor-active input,
-html.custom-cursor-active textarea {
-  cursor: text !important;
+html.custom-cursor-active textarea { cursor: text !important; }
+
+/* ==================================================================
+   INTERACTION FEEL
+
+   Three things separate a control that feels alive from one that merely
+   changes colour: it lifts on hover, it compresses on press, and it settles
+   again. All three are transform- and shadow-only, so none of them trigger
+   layout, and all three collapse under the reduced-motion rule at the bottom
+   of this file.
+   ================================================================== */
+
+/* Press. Deliberately near-instant: a transition delay on the press state
+   makes a button feel laggy rather than tactile. */
+.btn:active,
+.btn-icon:active,
+.chip:active,
+.filter-pill:active,
+.nav-link:active {
+  transform: translate3d(0, 1px, 0) scale(0.975);
+  transition-duration: 60ms;
+}
+/* The shadow collapses on press so the control reads as being pushed into the
+   surface rather than sliding over it. */
+.btn:active { box-shadow: none; }
+
+/* Keyboard activation must not jump the control a full pixel; only a real
+   pointer press should. */
+.btn:focus-visible:active,
+.btn-icon:focus-visible:active { transform: none; }
+
+.btn-ghost:hover,
+.chip:hover { transform: translate3d(0, -1px, 0); }
+.btn-ghost:active,
+.chip:active { transform: translate3d(0, 1px, 0) scale(0.975); }
+
+/* Icon buttons gain a faint ring on press so a tap reads as confirmed even on
+   a small target. */
+.btn-icon:active {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: rgba(10, 130, 189, 0.34);
 }
 
-/* === Animations === */
-@keyframes fade-up {
-  from { opacity: 0; transform: translateY(30px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-up { animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+/* Filter pills: the selected one keeps its ring, the unselected ones ease
+   into the hover state rather than snapping. */
+.filter-pill { transition-property: color, background-color, border-color, box-shadow, transform; }
+.filter-pill:not([aria-pressed='true']):active { background: rgba(16, 18, 25, 0.08); }
 
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.animate-fade-in { animation: fade-in 0.6s ease both; }
+/* Stretched card actions. The card lifts and its border lights up when the
+   control inside it is activated, so clicking anywhere on a card feels like
+   clicking one object rather than a hidden overlay.
 
-@keyframes scale-in {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
-}
-.animate-scale-in { animation: scale-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
-
-@keyframes slide-in-right {
-  from { opacity: 0; transform: translateX(40px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-.animate-slide-right { animation: slide-in-right 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
-
-@keyframes toast-enter {
-  from { opacity: 0; transform: translateX(40px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-.toast-enter { animation: toast-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
-
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(20, 124, 138, 0.1); }
-}
-.pulse-glow { animation: none; box-shadow: 0 0 0 3px rgba(20, 124, 138, 0.1); }
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-.shimmer {
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite;
+   `:has()` is behind an explicit @supports so an engine that lacks it drops
+   only this declaration and keeps the `:focus-within` rule above it, rather
+   than discarding the selector list it shares. */
+@supports selector(:has(*)) {
+  .card:has(.card-action:active) { transform: translate3d(0, -1px, 0) scale(0.995); }
 }
 
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-.spin-slow { animation: spin-slow 8s linear infinite; }
+/* Tags and progress fills ease rather than jump. */
+.tag { transition: background-color var(--dur-hover) var(--ease-out-expo), border-color var(--dur-hover) var(--ease-out-expo), color var(--dur-hover) var(--ease-out-expo); }
+.progress-fill { transition: transform 180ms var(--ease-out-expo); }
 
-/* === Reveal on scroll ===
-   The GSAP ScrollTrigger hook that used to drive these is gone: it was dead
-   code that never ran, and a scroll-driven reveal is a scroll listener and a
-   layout mutation per section. Elements keep the `reveal` / `hero-enter` class
-   names for styling, but they now render statically and cost nothing to paint. */
+/* ==================================================================
+   CHATBOT — 3D
 
-.hero-depth {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-}
-.hero-depth-back {
-  background:
-    linear-gradient(115deg, transparent 25%, rgba(34, 211, 238, 0.035) 48%, transparent 70%),
-    radial-gradient(ellipse at 50% 42%, rgba(34, 211, 238, 0.075), transparent 48%);
-}
-.hero-depth-back span {
-  position: absolute;
-  top: 12%;
-  left: 50%;
-  color: rgba(29, 29, 31, 0.018);
-  font: 800 clamp(3.2rem, 16vw, 14rem)/1 'Plus Jakarta Sans', sans-serif;
-  transform: translateX(-50%);
-  white-space: nowrap;
-  letter-spacing: 0;
-  user-select: none;
-}
-.hero-depth-front {
-  inset: 18% 8% 16%;
-  border-block: 1px solid rgba(29, 29, 31, 0.035);
-  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.025), transparent);
-}
+   The panel is a stack of glass plates in a perspective space. Depth comes
+   from real 3D transforms rather than layered shadows, which is what makes it
+   read as dimensional rather than merely decorated.
 
-.hero-atmosphere {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 1;
-  overflow: visible;
+   Rules that keep it safe:
+    - `perspective` lives on the *wrapper*, never on the transformed element,
+      and the transformed element is `position: fixed`, so it is not an
+      ancestor of anything else (see the transform/fixed-overlay note above).
+    - Only `transform` and `opacity` animate. No layout, no filter changes on
+      a moving element, so it stays on the compositor.
+    - Every rule is neutralised by the reduced-motion block at the bottom of
+      this file and by the coarse-pointer block: a 3D panel on a phone is
+      motion nobody asked for, and it costs frames on a weak GPU.
+   ================================================================== */
+
+.chat-scene {
+  perspective: 1400px;
+  perspective-origin: 50% -10%;
   pointer-events: none;
 }
-.hero-atmosphere-trace {
-  fill: none;
-  stroke: rgba(103, 232, 249, 0.12);
-  stroke-width: 1;
-  stroke-dasharray: 2 11;
-}
-.hero-atmosphere-trace-soft {
-  stroke: rgba(196, 181, 253, 0.08);
-  stroke-dasharray: 1 14;
-}
-.hero-particle {
-  fill: rgba(103, 232, 249, 0.46);
-  filter: drop-shadow(0 0 5px rgba(103, 232, 249, 0.5));
-}
-.hero-particle-bright {
-  fill: rgba(255, 255, 255, 0.7);
-}
 
-.literature-deck-item {
-  position: relative;
-}
-.literature-deck-surface {
-  transition: border-color 0.4s ease, box-shadow 0.4s ease;
-}
-.literature-copy {
-  font-family: 'Noto Sans Devanagari', 'Nirmala UI', 'Mangal', 'Kohinoor Devanagari', sans-serif;
-  line-height: 2;
-  padding-block: 0.08em;
-  overflow-wrap: anywhere;
-  word-break: normal;
-  hyphens: none;
-  font-synthesis: none;
-}
-
-/* === GPU Hardware Acceleration Utilities ===
-   Only safe on small, already-fixed elements (the modal shells). Any transform
-   or `will-change: transform` here would turn the element into the containing
-   block for its `position: fixed` descendants, so never put this class on a
-   page-level wrapper or on a <section>. */
-.gpu-accelerated {
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
-  -webkit-backface-visibility: hidden;
+.chat-panel {
+  transform-style: preserve-3d;
+  transform: rotateX(7deg) rotateY(-5deg) translateZ(0);
+  transition: transform var(--dur-drawer) var(--ease-out-expo), box-shadow var(--dur-drawer) var(--ease-out-expo);
+  will-change: transform;
   backface-visibility: hidden;
 }
+/* Settles flat as it becomes the thing you are reading. */
+.chat-panel:hover,
+.chat-panel:focus-within {
+  transform: rotateX(2deg) rotateY(-1.5deg) translateZ(0);
+}
+/* Resting flat. A permanently tilted panel is unreadable and annoying. */
+.chat-panel:focus-within { transform: rotateX(0deg) rotateY(0deg) translateZ(0); }
 
-/* Force GPU layer for smooth animations */
-.gpu-layer {
-  transform: translate3d(0, 0, 0);
-  -webkit-transform: translate3d(0, 0, 0);
+/* The internal plates sit at different depths, so the panel has real
+   parallax as it turns. */
+.chat-plate { transform: translateZ(0); transition: transform var(--dur-drawer) var(--ease-out-expo); }
+.chat-panel:hover .chat-plate-header { transform: translateZ(28px); }
+.chat-panel:hover .chat-plate-dials { transform: translateZ(20px); }
+.chat-panel:hover .chat-plate-log { transform: translateZ(12px); }
+.chat-panel:hover .chat-plate-input { transform: translateZ(24px); }
+
+/* The specular sheen that makes glass read as glass. Position-only, so it
+   never triggers a repaint of the content beneath. */
+.chat-sheen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    128deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0) 34%,
+    rgba(255, 255, 255, 0) 66%,
+    rgba(255, 255, 255, 0.28) 100%
+  );
+  opacity: 0.6;
+  transition: opacity var(--dur-drawer) var(--ease-out-expo);
+  z-index: 30;
+}
+.chat-panel:hover .chat-sheen::before { opacity: 0.9; }
+
+/* Bubbles alternate depth so a conversation has a front and a back. */
+.chat-bubble { transform: translateZ(0); transition: transform var(--dur-hover) var(--ease-out-quint); }
+.chat-bubble-bot { transform: translateZ(8px); }
+.chat-bubble-user { transform: translateZ(2px); }
+.chat-bubble:hover { transform: translateZ(14px) scale(1.012); }
+
+/* The typing dots bob in 3D rather than just pulsing. */
+.chat-typing-dot { animation: chat-bob 1.1s var(--ease-in-out-quart) infinite; transform-style: preserve-3d; }
+@keyframes chat-bob {
+  0%, 100% { transform: translate3d(0, 0, 0) rotateX(0deg); }
+  50%      { transform: translate3d(0, -3px, 6px) rotateX(28deg); }
 }
 
-/* iOS Safari specific fixes */
+/* The dials. Small, but they are the most-clicked control in the widget, so
+   they get a real pressed state. */
+.chat-dial {
+  min-height: 28px;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all var(--dur-hover) var(--ease-out-expo);
+  transform-style: preserve-3d;
+}
+.chat-dial:hover { color: var(--ink); background: rgba(16, 18, 25, 0.045); transform: translateZ(6px); }
+.chat-dial:active { transform: translateZ(0) scale(0.95); }
+.chat-dial[aria-pressed='true'] {
+  color: #ffffff;
+  background: linear-gradient(135deg, #0c6899, #6146df);
+  border-color: transparent;
+  box-shadow: 0 4px 12px -5px rgba(12, 79, 126, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.16) inset;
+  transform: translateZ(10px);
+}
+
+/* The launcher is a physical object: it has a face, it turns, it presses. */
+.chat-launcher {
+  transform-style: preserve-3d;
+  transform: rotateX(0deg) translateZ(0);
+  transition: transform var(--dur-drawer) var(--ease-out-expo), box-shadow var(--dur-drawer) var(--ease-out-expo);
+  will-change: transform;
+}
+.chat-launcher:hover { transform: rotateX(12deg) translateY(-3px) scale(1.06); }
+.chat-launcher:active { transform: rotateX(-6deg) translateY(1px) scale(0.97); }
+.chat-launcher[aria-expanded='true'] { transform: rotateX(0deg) scale(0.94); }
+.chat-launcher::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.34), transparent 58%);
+  pointer-events: none;
+}
+
+/* Welcome prompt: a small card that floats in on a 3D arc. */
+.chat-greeting { transform: rotateY(-14deg) translateZ(24px); transform-origin: right bottom; }
+.chat-greeting:hover { transform: rotateY(-4deg) translateZ(32px); }
+
+@media (max-width: 640px), (hover: none), (pointer: coarse) {
+  /* A tilted panel is harder to read and costs frames on a phone. Flat, but
+     keep the depth cues that are free. */
+  .chat-panel { transform: none; }
+  .chat-panel:hover, .chat-panel:focus-within { transform: none; }
+  .chat-panel:hover .chat-plate,
+  .chat-panel:hover .chat-plate-header,
+  .chat-panel:hover .chat-plate-dials,
+  .chat-panel:hover .chat-plate-log,
+  .chat-panel:hover .chat-plate-input { transform: none; }
+  .chat-launcher:hover { transform: translateY(-2px) scale(1.04); }
+  .chat-greeting { transform: none; }
+  .chat-bubble:hover { transform: none; }
+}
+
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Scroll container used by every drawer, sheet and the reader. */
+.scroll-y {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cfd5de; border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: #aab3c0; background-clip: content-box; }
+
+input[type='search']::-webkit-search-cancel-button { display: none; }
+
+/* ==================================================================
+   BROWSER FALLBACKS
+
+   `backdrop-filter` is the single most expensive thing on this site on
+   a weak GPU. iOS Safari composites it on every scroll frame, and a
+   coarse pointer never benefits from it. In both cases the blur is
+   dropped and the surface alpha is raised so contrast is preserved.
+   ================================================================== */
 @supports (-webkit-touch-callout: none) {
-  /* iOS Safari: drop backdrop-filter entirely (it forces expensive, janky
-     compositing) and keep only the GPU-promoting transform. */
   .glass,
   .glass-strong {
-    backdrop-filter: none;
     -webkit-backdrop-filter: none;
-    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: none;
+    --glass-bg: rgba(255, 255, 255, 0.94);
+    --glass-bg-strong: rgba(255, 255, 255, 0.97);
   }
-
-  .reveal,
-  .hero-enter {
-    opacity: 1;
-  }
-
-  .hero-depth,
-  .hero-atmosphere {
-    will-change: auto;
-  }
-
-  .hero-atmosphere {
-    display: none;
-  }
-
-  /* Disable fixed positioning issues on iOS */
-  .fixed,
-  [style*="position: fixed"] {
-    -webkit-transform: translateZ(0);
-    transform: translateZ(0);
-  }
-
-  /* Smooth scrolling for iOS */
-  .ios-scroll {
-    -webkit-overflow-scrolling: touch;
-    overflow-scrolling: touch;
-    overscroll-behavior: contain;
-  }
+  .overlay-scrim { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(14, 16, 24, 0.55); }
 }
 
-/* Mobile optimizations */
 @media (max-width: 1023px) {
   .glass,
-  .glass-strong,
-  nav .glass,
-  nav .glass-strong {
-    backdrop-filter: none;
+  .glass-strong {
     -webkit-backdrop-filter: none;
-    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: none;
+    --glass-bg: rgba(255, 255, 255, 0.93);
+    --glass-bg-strong: rgba(255, 255, 255, 0.96);
   }
-
-  /* Reduce animation complexity on mobile */
-  .reveal,
-  .hero-enter {
-    will-change: auto;
-  }
-
-  /* Disable parallax on mobile */
-  [data-parallax] {
-    transform: none !important;
-    will-change: auto !important;
-  }
+  .overlay-scrim { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(14, 16, 24, 0.5); }
 }
 
-/* Reduced motion support */
+@media (hover: none), (pointer: coarse) {
+  .card-interactive:hover { transform: none; }
+  .card-lit::after { display: none; }
+}
+
+/* No `mask-composite` support: drop the sheen rather than render a
+   solid bar over the card. */
+@supports not ((mask-composite: exclude) or (-webkit-mask-composite: xor)) {
+  .card-sheen::before { display: none; }
+}
+
+/* ==================================================================
+   REDUCED MOTION
+
+   Two independent switches feed this: the OS preference, and the
+   admin's `animationSettings`. Both set `data-motion="off"` on <html>.
+   ================================================================== */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after {
@@ -536,330 +1319,23 @@ html.custom-cursor-active textarea {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .reveal, .hero-enter { opacity: 1; transform: none; }
-  .hero-atmosphere { display: none; }
-  .aurora-orb { display: none; }
-  .gpu-accelerated { will-change: auto; }
+  [data-reveal] { opacity: 1 !important; transform: none !important; }
 }
 
-/* === 3D Tilt === */
-.tilt-card {
-  transform-style: preserve-3d;
-  transition: transform 0.2s ease-out;
-  will-change: transform;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
+[data-motion='off'] { scroll-behavior: auto; }
+[data-motion='off'] *,
+[data-motion='off'] *::before,
+[data-motion='off'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
+[data-motion='off'] [data-reveal] { opacity: 1 !important; transform: none !important; }
 
-/* === Skill Pills === */
-.skill-pill {
-  background: rgba(34, 211, 238, 0.08);
-  border: 1px solid rgba(34, 211, 238, 0.2);
-  color: #a5f3fc;
-  transition: all 0.3s;
-}
-.skill-pill:hover {
-  background: rgba(34, 211, 238, 0.15);
-  border-color: rgba(34, 211, 238, 0.5);
-  box-shadow: 0 0 20px rgba(34, 211, 238, 0.2);
-  transform: translateY(-2px);
-}
+/* `subtle` keeps reveals and hover, drops the ambient and pointer layers. */
+[data-motion='subtle'] .ambient-only { display: none !important; }
 
-/* === Timeline === */
-.timeline-node {
-  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.15), 0 0 20px rgba(34, 211, 238, 0.3);
+@media print {
+  .site-bg, .site-grain, .site-grid, .site-nav { display: none; }
+  body { background: #ffffff; }
 }
-.timeline-node-purple {
-  box-shadow: 0 0 0 4px rgba(167, 139, 250, 0.15), 0 0 20px rgba(167, 139, 250, 0.3);
-}
-.timeline-node-rose {
-  box-shadow: 0 0 0 4px rgba(251, 113, 133, 0.15), 0 0 20px rgba(251, 113, 133, 0.3);
-}
-
-/* === Scrollbar === */
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: #f5f5f7; }
-::-webkit-scrollbar-thumb {
-  background: #c9c9ce;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #9b9ba1;
-}
-
-/* === Reading progress bar === */
-.reading-progress {
-  position: fixed;
-  top: 0; left: 0;
-  height: 3px;
-  width: 100%;
-  background: linear-gradient(90deg, #22d3ee, #a78bfa, #fb7185);
-  z-index: 10000;
-  transform: scaleX(0);
-  transform-origin: left center;
-  will-change: transform;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
-}
-
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(120deg, #1d1d1f 0%, #40536c 70%, #147c8a 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.gradient-text-cyan {
-  background: linear-gradient(135deg, #147c8a, #245c93);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* Premium button */
-.btn-premium {
-  background: linear-gradient(135deg, rgba(0, 113, 227, 0.08), rgba(20, 124, 138, 0.06));
-  border: 1px solid rgba(0, 113, 227, 0.2);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.btn-premium:hover {
-  background: linear-gradient(135deg, rgba(0, 113, 227, 0.12), rgba(20, 124, 138, 0.1));
-  border-color: rgba(0, 113, 227, 0.32);
-  box-shadow: 0 4px 16px rgba(0, 113, 227, 0.1);
-  transform: translateY(-2px);
-}
-
-/* Loading spinner */
-.loader-orbit {
-  width: 60px; height: 60px;
-  border: 3px solid rgba(34, 211, 238, 0.1);
-  border-top-color: #22d3ee;
-  border-radius: 50%;
-  animation: spin-slow 1s linear infinite;
-}
-
-/* Section heading underline */
-.heading-line {
-  height: 3px;
-  width: 60px;
-  background: linear-gradient(90deg, #22d3ee, #a78bfa);
-  border-radius: 2px;
-}
-
-/* Noise texture overlay */
-.noise-overlay::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-  pointer-events: none;
-  z-index: 1;
-}
-
-/* Hide scrollbar for horizontal scroll containers */
-.scrollbar-hide::-webkit-scrollbar { display: none; }
-.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-
-.ios-scroll {
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-}
-
-/* === Immersive reader ===
-   The single scroll container of the literature modal. `max-height` is an
-   upper bound, not a fixed size: the flex parent can still shrink it on short
-   screens, while tall screens get the full 75vh reading measure. */
-.reader-scroll {
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  max-height: 75vh;
-  /* Momentum scrolling must not chain to the (locked) page behind the modal. */
-  touch-action: pan-y;
-}
-
-/* Text sitting on a saturated gradient: the light-theme `.premium-bg` remaps
-   `text-white` utilities, so anything on a cover/banner needs this. */
-.on-gradient-text,
-.on-gradient-text * {
-  color: #ffffff !important;
-}
-
-/* External link card used when a media URL cannot be embedded. */
-.external-card {
-  background: linear-gradient(135deg, rgba(0, 113, 227, 0.06), rgba(20, 124, 138, 0.05));
-  border: 1px solid var(--line);
-  transition: border-color 0.28s ease, box-shadow 0.28s ease, transform 0.28s ease;
-}
-.external-card:hover {
-  border-color: rgba(0, 113, 227, 0.28);
-  box-shadow: 0 8px 24px rgba(29, 29, 31, 0.08);
-}
-
-/* === Chat widget === */
-.chat-fab {
-  box-shadow: 0 10px 30px rgba(29, 29, 31, 0.18);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
-}
-.chat-fab:hover {
-  transform: translateY(-2px) scale(1.03);
-  box-shadow: 0 14px 36px rgba(29, 29, 31, 0.24);
-}
-.chat-fab:active {
-  transform: scale(0.97);
-}
-
-.chat-panel {
-  box-shadow: 0 24px 70px rgba(29, 29, 31, 0.22);
-  transform-origin: bottom right;
-}
-.chat-bubble-in {
-  animation: chat-bubble-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes chat-bubble-in {
-  from { opacity: 0; transform: translateY(8px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* The chat window rises out of the launcher, the greeting pops beside it. */
-.chat-panel-in {
-  transform-origin: bottom right;
-  animation: chat-panel-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes chat-panel-in {
-  from { opacity: 0; transform: translateY(18px) scale(0.96); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-.greeting-pop {
-  transform-origin: bottom right;
-  animation: greeting-pop 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes greeting-pop {
-  from { opacity: 0; transform: translateY(10px) scale(0.9); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-.chat-typing span {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 3px;
-  border-radius: 9999px;
-  background: var(--silver);
-  animation: chat-typing 1s infinite ease-in-out;
-}
-.chat-typing span:nth-child(2) { animation-delay: 0.15s; }
-.chat-typing span:nth-child(3) { animation-delay: 0.3s; }
-@keyframes chat-typing {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
-  30% { transform: translateY(-3px); opacity: 1; }
-}
-
-nav {
-  transform: translate3d(0, 0, 0);
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  will-change: auto;
-  /* Never let the fixed nav overlap the reading progress bar. */
-  max-height: 100vh;
-}
-
-/* Keep the fixed nav and its backdrop-filter layer from fighting the scroll
-   compositor on mobile, which produced visible jitter/tearing. */
-@media (max-width: 1023px) {
-  .glass,
-  .glass-strong,
-  nav .glass,
-  nav .glass-strong {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: rgba(255, 255, 255, 0.94);
-  }
-}
-
-@supports (-webkit-touch-callout: none) {
-  /* iOS Safari: drop backdrop-filter entirely (it forces expensive, janky
-     compositing) and keep only the GPU-promoting transform. */
-  .glass,
-  .glass-strong {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: rgba(255, 255, 255, 0.96);
-  }
-
-  .reveal,
-  .hero-enter {
-    opacity: 1;
-  }
-
-  .hero-depth,
-  .hero-atmosphere {
-    will-change: auto;
-  }
-
-  .hero-atmosphere {
-    display: none;
-  }
-}
-
-/* Inputs */
-.premium-input {
-  background: #ffffff;
-  border: 1px solid var(--line);
-  color: var(--ink);
-  transition: all 0.3s;
-}
-.premium-input:focus {
-  outline: none;
-  border-color: rgba(0, 113, 227, 0.5);
-  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.09);
-}
-.premium-input::placeholder { color: #86868b; }
-input[type="search"]::-webkit-search-cancel-button { display: none; }
-:focus-visible {
-  outline: 2px solid rgba(0, 113, 227, 0.65);
-  outline-offset: 3px;
-}
-
-.profile-photo-shade,
-.media-image-shade {
-  background: linear-gradient(to top, rgba(15, 18, 23, 0.72), transparent 72%);
-}
-.profile-photo-caption,
-.media-type-badge,
-.media-image-caption,
-.literature-cover-badge {
-  color: #ffffff !important;
-}
-.profile-photo-caption [class*="text-white"],
-.media-type-badge [class*="text-white"],
-.media-image-caption [class*="text-white"],
-.literature-cover-badge [class*="text-white"] {
-  color: #ffffff !important;
-}
-
-/* Keep legacy Tailwind color utilities legible on the light theme. */
-.premium-bg [class~="text-white"],
-.premium-bg [class~="text-white/90"],
-.premium-bg [class~="text-white/80"] { color: var(--ink); }
-.premium-bg [class~="text-white/75"] { color: #4c4c50; }
-.premium-bg [class~="text-white/70"],
-.premium-bg [class~="text-white/60"],
-.premium-bg [class~="text-white/50"],
-.premium-bg [class~="text-white/40"],
-.premium-bg [class~="text-white/35"],
-.premium-bg [class~="text-white/30"] { color: var(--muted); }
-.premium-bg [class~="text-white/20"] { color: #86868b; }
-.premium-bg [class*="text-cyan-"],
-.premium-bg [class*="text-violet-"] { color: #176d79; }
-.premium-bg [class*="text-rose-"] { color: #a34553; }
-.premium-bg [class*="text-emerald-"] { color: #286749; }
-.premium-bg [class*="text-amber-"] { color: #805900; }
-.premium-bg [class~="text-navy-deep"] { color: #1d1d1f; }
-.premium-bg [class*="hover:text-white"]:hover { color: var(--ink); }
-.premium-bg [class*="border-white/"] { border-color: var(--line); }
-.premium-bg [class~="bg-white/5"],
-.premium-bg [class~="bg-white/10"] { background-color: rgba(29, 29, 31, 0.035); }
-.premium-bg .toast-enter { color: var(--ink); }
-.noise-overlay::after { display: none; }

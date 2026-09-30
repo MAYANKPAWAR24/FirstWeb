@@ -88,7 +88,7 @@ function extractVimeoId(raw: string): string | null {
   return match ? match[1] : null;
 }
 
-function hostLabel(raw: string) {
+export function hostLabel(raw: string) {
   try {
     return hostOf(new URL(normalizeUrl(raw))) || 'the web';
   } catch {

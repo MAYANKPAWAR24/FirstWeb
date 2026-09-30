@@ -13,6 +13,22 @@ export function cls(...args: (string | false | undefined | null)[]): string {
   return args.filter(Boolean).join(' ');
 }
 
+/**
+ * Guards a URL that came from stored data before it goes into an `href`.
+ *
+ * Without this, a saved `javascript:` URL becomes a clickable script when the
+ * resume download button renders. Only http(s) is allowed; `mailto:` and
+ * `tel:` are rejected here because the resume button is always a file.
+ */
+export function isSafeHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value, typeof window !== 'undefined' ? window.location.origin : 'https://example.com');
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export function downloadJSON(data: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);

@@ -1,79 +1,79 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { sounds } from '@/lib/sound';
-
+import { useRef, type ReactNode } from 'react';
+import { cls } from '@/lib/utils';
 interface TiltCardProps {
   children: ReactNode;
   className?: string;
-  intensity?: number;
-  glow?: boolean;
-  onClick?: () => void;
+  /** Adds the pointer-follow highlight. */
+  lit?: boolean;
+  /**
+   * Degrees of 3D tilt. 0 disables it entirely, which is what every touch
+   * device and reduced-motion user gets.
+   */
+  maxTilt?: number;
 }
 
-const RESTING_TRANSFORM = 'perspective(800px) rotateX(0deg) rotateY(0deg) translateZ(0)';
-
-/** 3D tilt effect card that responds to mouse position. */
-export default function TiltCard({ children, className = '', intensity = 12, glow = false, onClick }: TiltCardProps) {
-  const ref = useRef<HTMLDivElement>(null);
+/**
+ * Depth on hover: a small 3D tilt plus a pointer-follow highlight.
+ *
+ * Two hard rules, both learned the hard way in this repo:
+ *
+ *  1. `pointermove` is throttled through one rAF per card and never calls
+ *     `preventDefault`, so it can never swallow a click.
+ *  2. The transform is written to a CSS custom property consumed by a nested
+ *     element, never to the card itself. Putting `transform` on the card would
+ *     make it the containing block for every `position: fixed` descendant,
+ *     which is the bug documented at `App.tsx` and `index.css`.
+ *
+ * Tilt is disabled entirely on coarse pointers and reduced motion.
+ */
+export default function TiltCard({
+  children,
+  className = '',
+  lit = false,
+  maxTilt = 3.5,
+}: TiltCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
   const frame = useRef(0);
-  const enabled = useRef(false);
 
-  // Tilt is pointer-only and pointless when motion is reduced.
-  useEffect(() => {
-    enabled.current = window.matchMedia('(hover: hover) and (pointer: fine)').matches &&
-      !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    return () => { if (frame.current) cancelAnimationFrame(frame.current); };
-  }, []);
+  const enabled = () =>
+    maxTilt > 0
+    && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches === true
+    && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    && document.documentElement.dataset.motion !== 'off';
 
-  const handleMove = (e: React.MouseEvent) => {
-    const el = ref.current;
-    if (!el || !enabled.current) return;
-    const pointer = e;
-    // Coalesce to one write per frame; getBoundingClientRect is read once and
-    // the transform write happens off the event burst.
+  const handleMove = (event: React.PointerEvent) => {
+    if (!enabled()) return;
+    const card = cardRef.current;
+    if (!card) return;
+    const point = event;
     if (frame.current) return;
     frame.current = requestAnimationFrame(() => {
       frame.current = 0;
-      const target = ref.current;
-      if (!target) return;
-      const rect = target.getBoundingClientRect();
-      const x = pointer.clientX - rect.left - rect.width / 2;
-      const y = pointer.clientY - rect.top - rect.height / 2;
-      const rx = (y / (rect.height / 2)) * -intensity;
-      const ry = (x / (rect.width / 2)) * intensity;
-      target.style.transform = `perspective(800px) rotateX(${rx}deg) rotateY(${ry}deg) translateZ(8px)`;
+      const rect = card.getBoundingClientRect();
+      const px = (point.clientX - rect.left) / rect.width;
+      const py = (point.clientY - rect.top) / rect.height;
+      card.style.setProperty('--mx', `${px * 100}%`);
+      card.style.setProperty('--my', `${py * 100}%`);
+      card.style.setProperty('--tilt-x', `${(0.5 - py) * maxTilt}deg`);
+      card.style.setProperty('--tilt-y', `${(px - 0.5) * maxTilt}deg`);
     });
   };
 
-  const handleEnter = () => {
-    sounds.hover();
-  };
-
-  const handleLeave = () => {
-    if (frame.current) cancelAnimationFrame(frame.current);
-    frame.current = 0;
-    const el = ref.current;
-    if (el) el.style.transform = RESTING_TRANSFORM;
+  const reset = () => {
+    const card = cardRef.current;
+    if (!card) return;
+    card.style.setProperty('--tilt-x', '0deg');
+    card.style.setProperty('--tilt-y', '0deg');
+    card.style.setProperty('--mx', '50%');
+    card.style.setProperty('--my', '50%');
   };
 
   return (
     <div
-      ref={ref}
-      className={`tilt-card ${glow ? 'glow-border' : ''} ${className}`}
-      // A clickable div is invisible to the custom cursor's tag selector and
-      // to the keyboard, so both are made explicit here.
-      data-cursor={onClick ? 'link' : undefined}
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onKeyDown={onClick ? (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick();
-        }
-      } : undefined}
-      onMouseMove={handleMove}
-      onMouseEnter={handleEnter}
-      onMouseLeave={handleLeave}
-      onClick={onClick}
+      ref={cardRef}
+      onPointerMove={handleMove}
+      onPointerLeave={reset}
+      className={cls('card-tilt', lit && 'card-lit', className)}
     >
       {children}
     </div>
