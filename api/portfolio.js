@@ -21,7 +21,7 @@ const GUESTBOOK_NAME_MAX_LENGTH = 50;
  */
 const DEFAULT_SECTION_ORDER = [
   'profile', 'portfolio', 'literature', 'media', 'study',
-  'achievements', 'certificates', 'follow', 'contact', 'community', 'games',
+  'achievements', 'certificates', 'contact', 'community', 'games',
 ];
 const TOGGLEABLE_BLOCKS = [...DEFAULT_SECTION_ORDER, 'visitors'];
 
@@ -32,6 +32,8 @@ const TOGGLEABLE_BLOCKS = [...DEFAULT_SECTION_ORDER, 'visitors'];
  */
 const LEGACY_SECTION_EXPANSION = {
   extra: ['achievements', 'certificates', 'contact', 'community'],
+  // The social grid now lives inside Contact, so there is no section to render.
+  follow: [],
 };
 
 /** Pre-Phase-3 visibility keys that were renamed. */

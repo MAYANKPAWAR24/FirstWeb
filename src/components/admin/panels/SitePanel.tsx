@@ -1,15 +1,18 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent } from 'react';
 import {
   ArrowDown, ArrowUp, Download, Eye, EyeOff, Plus, RefreshCw, RotateCcw, Trash2, Upload,
 } from 'lucide-react';
 import { sounds } from '@/lib/sound';
-import { cls, downloadJSON, uid } from '@/lib/utils';
+import { cls, downloadJSON } from '@/lib/utils';
 import type { SocialLink } from '@/lib/types';
-import { PUBLIC_SECTIONS, TOGGLEABLE_BLOCKS, type PublicSectionId, type ToggleableId } from '@/lib/sectionOrder';
 import {
-  AdminHeader, ConfirmDialog, Field, FormModal, IconButton,
-  SectionCard, SyncPanel,
-} from '@/components/admin/primitives';
+  SOCIAL_PLATFORMS, SOCIAL_CATEGORY_LABELS, type SocialPlatform, type SocialCategory,
+} from '@/lib/socialPlatforms';
+
+/** Fixed order so the picker's sections do not reshuffle as entries are added. */
+const CATEGORY_ORDER: SocialCategory[] = ['social', 'professional', 'dev', 'media', 'messaging'];
+import { PUBLIC_SECTIONS, TOGGLEABLE_BLOCKS, type PublicSectionId, type ToggleableId } from '@/lib/sectionOrder';
+import { AdminHeader, ConfirmDialog, IconButton, SectionCard, SyncPanel } from '@/components/admin/primitives';
 import { useAdminData, type ResettableKey } from '@/components/admin/useAdminData';
 import { useAdminTab, type AdminTabId } from '@/components/admin/adminTab';
 
@@ -52,7 +55,8 @@ export default function SitePanel({ sectionOrder, onSectionOrderChange }: AdminS
   const [resetKey, setResetKey] = useState<ResettableKey | null>(null);
   const [pendingReset, setPendingReset] = useState(false);
   const [pendingImport, setPendingImport] = useState<Record<string, unknown> | null>(null);
-  const [newSocial, setNewSocial] = useState<{ show: boolean; label: string; url: string }>({ show: false, label: '', url: '' });
+  const [showPlatformPicker, setShowPlatformPicker] = useState(false);
+  const [query, setQuery] = useState('');
   const [pendingSocial, setPendingSocial] = useState<SocialLink | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -97,18 +101,36 @@ export default function SitePanel({ sectionOrder, onSectionOrderChange }: AdminS
     }
   };
 
-  const addSocial = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const label = newSocial.label.trim();
-    const url = newSocial.url.trim();
-    if (!label || !/^https?:\/\//i.test(url)) {
-      notify('A name and a full https:// URL are required', 'error');
+  /**
+   * Adds a catalogue platform that is not in the profile yet, pre-filled with
+   * its handle placeholder so the admin only has to paste their handle.
+   */
+  const addPlatform = (platform: SocialPlatform) => {
+    if (socials.some((social) => social.id === platform.id)) {
+      notify(`${platform.label} is already in the list`, 'info');
       return;
     }
-    setSocials([...socials, { id: `custom-${uid()}`, label, url, icon: 'AtSign', visible: true }]);
-    setNewSocial({ show: false, label: '', url: '' });
-    notify(`${label} added to the social links`);
+    sounds.click();
+    setSocials([
+      ...socials,
+      {
+        id: platform.id,
+        label: platform.label,
+        url: platform.example,
+        icon: platform.icon ?? '',
+        visible: true,
+      },
+    ]);
+    notify(`${platform.label} added — paste your handle into the URL field`);
   };
+
+  const missingPlatforms = useMemo(() => {
+    const present = new Set(socials.map((social) => social.id));
+    const term = query.trim().toLowerCase();
+    return SOCIAL_PLATFORMS
+      .filter((platform) => !present.has(platform.id))
+      .filter((platform) => !term || platform.label.toLowerCase().includes(term));
+  }, [socials, query]);
 
   const resetLabel = RESETTABLE.find((entry) => entry.key === resetKey)?.label ?? '';
 
@@ -191,17 +213,65 @@ export default function SitePanel({ sectionOrder, onSectionOrderChange }: AdminS
           action={(
             <button
               type="button"
-              onClick={() => {
-                sounds.click();
-                setNewSocial({ show: true, label: '', url: '' });
-              }}
+              aria-expanded={showPlatformPicker}
+              onClick={() => { sounds.click(); setShowPlatformPicker((current) => !current); }}
               className="btn btn-secondary px-3 text-xs"
             >
               <Plus size={14} aria-hidden="true" />
-              Add
+              Add platform
             </button>
           )}
         >
+          {showPlatformPicker && (
+            <div className="mb-4 rounded-card border border-[var(--line)] bg-[var(--surface-2)] p-3.5">
+              <label htmlFor="platform-search" className="label">Add a platform</label>
+              <input
+                id="platform-search"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search platforms…"
+                className="field h-9 min-h-0 text-[13px]"
+              />
+              {missingPlatforms.length === 0 ? (
+                <p className="mt-3 text-[12.5px] text-[var(--muted)]">
+                  Every platform in the catalogue is already listed.
+                </p>
+              ) : (
+                <div className="mt-3 max-h-64 space-y-2.5 overflow-y-auto">
+                  {CATEGORY_ORDER.map((category) => {
+                    const group = missingPlatforms.filter((platform) => platform.category === category);
+                    if (group.length === 0) return null;
+                    return (
+                      <div key={category}>
+                        <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--faint)]">
+                          {SOCIAL_CATEGORY_LABELS[category]}
+                        </p>
+                        <ul className="flex flex-wrap gap-1.5">
+                          {group.map((platform) => (
+                            <li key={platform.id}>
+                              <button
+                                type="button"
+                                onClick={() => addPlatform(platform)}
+                                className="chip hover:border-[rgba(10,130,189,0.35)] hover:text-[var(--accent)]"
+                              >
+                                <Plus size={11} aria-hidden="true" />
+                                {platform.label}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <p className="mt-3 text-[11px] leading-relaxed text-[var(--faint)]">
+                {SOCIAL_PLATFORMS.length} platforms available. Paste a bare handle into the URL field and it is
+                expanded automatically, or use a full URL when a platform has no fixed base.
+              </p>
+            </div>
+          )}
           {socials.length === 0 ? (
             <p className="text-[13px] text-[var(--muted)]">No profiles yet.</p>
           ) : (
@@ -330,26 +400,6 @@ export default function SitePanel({ sectionOrder, onSectionOrderChange }: AdminS
           </ul>
         </SectionCard>
       </div>
-
-      {newSocial.show && (
-        <FormModal
-          open
-          title="Add a social profile"
-          onClose={() => setNewSocial({ show: false, label: '', url: '' })}
-          onSubmit={addSocial}
-          submitLabel="Add profile"
-        >
-          <Field label="Platform name" value={newSocial.label} onChange={(label) => setNewSocial((current) => ({ ...current, label }))} placeholder="Bluesky" />
-          <Field
-            label="Profile URL"
-            type="url"
-            value={newSocial.url}
-            onChange={(url) => setNewSocial((current) => ({ ...current, url }))}
-            placeholder="https://…"
-            hint="Must start with http:// or https://."
-          />
-        </FormModal>
-      )}
 
       <ConfirmDialog
         open={Boolean(pendingSocial)}

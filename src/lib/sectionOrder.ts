@@ -10,11 +10,12 @@ export type PublicSectionId = Exclude<SectionId, 'home' | 'custom'>;
  * composite `extra` section. `extra` is still accepted on read so an old local
  * mirror or an old cloud bin keeps its content and ordering.
  *
- * `follow` used to be listed here too, which meant an old record's `follow`
- * entry was dropped on upgrade. It is a real section again, so that entry now
- * resolves normally and those visitors keep the section they had.
+ * `follow` is here too. It was a page section until the social grid was folded
+ * into Contact; accepting it on read means an old record's entry is absorbed
+ * rather than dropped, so those visitors keep their social links and their
+ * ordering stays intact.
  */
-export const LEGACY_SECTION_IDS = ['extra'] as const;
+export const LEGACY_SECTION_IDS = ['extra', 'follow'] as const;
 
 /**
  * What each retired id expands into, in order, at the position where it was
@@ -23,6 +24,8 @@ export const LEGACY_SECTION_IDS = ['extra'] as const;
  */
 const LEGACY_EXPANSION: Record<string, PublicSectionId[]> = {
   extra: ['achievements', 'certificates', 'contact', 'community'],
+  // The social grid now lives inside Contact, so there is no section to render.
+  follow: [],
 };
 
 export const SECTION_ORDER_KEY = 'portfolio_section_order_v3';
@@ -38,7 +41,6 @@ export const PUBLIC_SECTIONS: { id: PublicSectionId; label: string }[] = [
   { id: 'study', label: 'Study Material' },
   { id: 'achievements', label: 'Achievements' },
   { id: 'certificates', label: 'Certificates' },
-  { id: 'follow', label: 'Follow Me' },
   { id: 'contact', label: 'Contact' },
   { id: 'community', label: 'Community' },
   { id: 'games', label: 'Play Break' },

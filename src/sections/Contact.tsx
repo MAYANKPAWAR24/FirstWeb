@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Mail, Phone, Send } from 'lucide-react';
 import Section from '@/components/Section';
 import Reveal from '@/components/Reveal';
+import SocialGrid, { resolveSocials } from '@/components/SocialGrid';
 import { sounds } from '@/lib/sound';
 import { useToast } from '@/lib/ToastContext';
 import type { ContactSettings, Profile, SocialLink } from '@/lib/types';
@@ -33,7 +34,7 @@ export default function ContactSection({
   // neither is set the whole direct-action row is omitted rather than
   // rendering a `mailto:` that goes nowhere.
   const resolvedEmail = settings.email.trim() || profile.email.trim();
-  const visibleSocials = socials.filter((social) => social.visible !== false && social.url);
+  const socialEntries = settings.showSocials ? resolveSocials(socials) : [];
 
   const validate = (): Errors => {
     const next: Errors = {};
@@ -133,29 +134,6 @@ export default function ContactSection({
               </a>
             )}
 
-            {settings.showSocials && visibleSocials.length > 0 && (
-              <>
-                <h4 className="mt-6 text-[11px] font-semibold uppercase tracking-wider text-[var(--faint)]">
-                  Elsewhere
-                </h4>
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {visibleSocials.map((social) => (
-                    <li key={social.id}>
-                      <a
-                        href={social.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onMouseEnter={() => sounds.hover()}
-                        className="chip transition-colors duration-[--dur-hover] hover:border-[rgba(10,130,189,0.35)] hover:text-[var(--accent)]"
-                      >
-                        {social.label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-
             {showVisitorCard && (
               <div className="mt-auto pt-6">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-[var(--faint)]">Total visitors</p>
@@ -251,6 +229,23 @@ export default function ContactSection({
           </Reveal>
         )}
       </div>
+
+      {/* The social grid lives here rather than in a separate "Follow Me"
+          section: it answers the same question the contact details answer, and
+          splitting them meant the social links competed with the form for
+          attention while the page grew by a whole section. */}
+      {socialEntries.length > 0 && (
+        <div className="mt-8">
+          <Reveal className="mb-4">
+            <h3 className="eyebrow">Follow Me</h3>
+            <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-[var(--muted)]">
+              Everywhere else I show up. Switch any of these off in
+              {' '}<strong>Admin &rarr; Site</strong> and it disappears here and in the footer.
+            </p>
+          </Reveal>
+          <SocialGrid entries={socialEntries} />
+        </div>
+      )}
     </Section>
   );
 }
