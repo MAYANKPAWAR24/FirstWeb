@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType, type FormEvent } from 'react';
 import {
-  AtSign, Award, BookOpen, Bot, Briefcase, Gamepad2, Globe, Home, Image as ImageIcon,
+  AtSign, Award, BookOpen, Bot, Briefcase, FileText, Gamepad2, Globe, Home, Image as ImageIcon,
   Layers, ListOrdered, LogOut, MessagesSquare, PanelTop, Search, Settings as SettingsIcon,
   Sparkles, Users, Zap,
 } from 'lucide-react';
@@ -14,6 +14,7 @@ import { SyncBadge } from '@/components/admin/primitives';
 import { AdminTabContext, type AdminTabId } from '@/components/admin/adminTab';
 import HomepagePanel from '@/components/admin/panels/HomepagePanel';
 import ProfilePanel from '@/components/admin/panels/ProfilePanel';
+import ResumePanel from '@/components/admin/panels/ResumePanel';
 import PortfolioPanel from '@/components/admin/panels/PortfolioPanel';
 import PoemsPanel from '@/components/admin/panels/PoemsPanel';
 import MediaPanel from '@/components/admin/panels/MediaPanel';
@@ -58,6 +59,7 @@ interface TabDefinition {
 const TABS: TabDefinition[] = [
   { id: 'homepage', label: 'Homepage', icon: Home, Panel: HomepagePanel },
   { id: 'profile', label: 'Profile', icon: Users, Panel: ProfilePanel },
+  { id: 'resume', label: 'Resume', icon: FileText, Panel: ResumePanel },
   { id: 'portfolio', label: 'Portfolio', icon: Briefcase, Panel: PortfolioPanel },
   { id: 'poems', label: 'Literature', icon: BookOpen, Panel: PoemsPanel },
   { id: 'media', label: 'Media', icon: ImageIcon, Panel: MediaPanel },

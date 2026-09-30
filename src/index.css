@@ -1104,6 +1104,149 @@ html.custom-cursor-active textarea { cursor: text !important; }
 .tag { transition: background-color var(--dur-hover) var(--ease-out-expo), border-color var(--dur-hover) var(--ease-out-expo), color var(--dur-hover) var(--ease-out-expo); }
 .progress-fill { transition: transform 180ms var(--ease-out-expo); }
 
+/* ==================================================================
+   CHATBOT — 3D
+
+   The panel is a stack of glass plates in a perspective space. Depth comes
+   from real 3D transforms rather than layered shadows, which is what makes it
+   read as dimensional rather than merely decorated.
+
+   Rules that keep it safe:
+    - `perspective` lives on the *wrapper*, never on the transformed element,
+      and the transformed element is `position: fixed`, so it is not an
+      ancestor of anything else (see the transform/fixed-overlay note above).
+    - Only `transform` and `opacity` animate. No layout, no filter changes on
+      a moving element, so it stays on the compositor.
+    - Every rule is neutralised by the reduced-motion block at the bottom of
+      this file and by the coarse-pointer block: a 3D panel on a phone is
+      motion nobody asked for, and it costs frames on a weak GPU.
+   ================================================================== */
+
+.chat-scene {
+  perspective: 1400px;
+  perspective-origin: 50% -10%;
+  pointer-events: none;
+}
+
+.chat-panel {
+  transform-style: preserve-3d;
+  transform: rotateX(7deg) rotateY(-5deg) translateZ(0);
+  transition: transform var(--dur-drawer) var(--ease-out-expo), box-shadow var(--dur-drawer) var(--ease-out-expo);
+  will-change: transform;
+  backface-visibility: hidden;
+}
+/* Settles flat as it becomes the thing you are reading. */
+.chat-panel:hover,
+.chat-panel:focus-within {
+  transform: rotateX(2deg) rotateY(-1.5deg) translateZ(0);
+}
+/* Resting flat. A permanently tilted panel is unreadable and annoying. */
+.chat-panel:focus-within { transform: rotateX(0deg) rotateY(0deg) translateZ(0); }
+
+/* The internal plates sit at different depths, so the panel has real
+   parallax as it turns. */
+.chat-plate { transform: translateZ(0); transition: transform var(--dur-drawer) var(--ease-out-expo); }
+.chat-panel:hover .chat-plate-header { transform: translateZ(28px); }
+.chat-panel:hover .chat-plate-dials { transform: translateZ(20px); }
+.chat-panel:hover .chat-plate-log { transform: translateZ(12px); }
+.chat-panel:hover .chat-plate-input { transform: translateZ(24px); }
+
+/* The specular sheen that makes glass read as glass. Position-only, so it
+   never triggers a repaint of the content beneath. */
+.chat-sheen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    128deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0) 34%,
+    rgba(255, 255, 255, 0) 66%,
+    rgba(255, 255, 255, 0.28) 100%
+  );
+  opacity: 0.6;
+  transition: opacity var(--dur-drawer) var(--ease-out-expo);
+  z-index: 30;
+}
+.chat-panel:hover .chat-sheen::before { opacity: 0.9; }
+
+/* Bubbles alternate depth so a conversation has a front and a back. */
+.chat-bubble { transform: translateZ(0); transition: transform var(--dur-hover) var(--ease-out-quint); }
+.chat-bubble-bot { transform: translateZ(8px); }
+.chat-bubble-user { transform: translateZ(2px); }
+.chat-bubble:hover { transform: translateZ(14px) scale(1.012); }
+
+/* The typing dots bob in 3D rather than just pulsing. */
+.chat-typing-dot { animation: chat-bob 1.1s var(--ease-in-out-quart) infinite; transform-style: preserve-3d; }
+@keyframes chat-bob {
+  0%, 100% { transform: translate3d(0, 0, 0) rotateX(0deg); }
+  50%      { transform: translate3d(0, -3px, 6px) rotateX(28deg); }
+}
+
+/* The dials. Small, but they are the most-clicked control in the widget, so
+   they get a real pressed state. */
+.chat-dial {
+  min-height: 28px;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  transition: all var(--dur-hover) var(--ease-out-expo);
+  transform-style: preserve-3d;
+}
+.chat-dial:hover { color: var(--ink); background: rgba(16, 18, 25, 0.045); transform: translateZ(6px); }
+.chat-dial:active { transform: translateZ(0) scale(0.95); }
+.chat-dial[aria-pressed='true'] {
+  color: #ffffff;
+  background: linear-gradient(135deg, #0c6899, #6146df);
+  border-color: transparent;
+  box-shadow: 0 4px 12px -5px rgba(12, 79, 126, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.16) inset;
+  transform: translateZ(10px);
+}
+
+/* The launcher is a physical object: it has a face, it turns, it presses. */
+.chat-launcher {
+  transform-style: preserve-3d;
+  transform: rotateX(0deg) translateZ(0);
+  transition: transform var(--dur-drawer) var(--ease-out-expo), box-shadow var(--dur-drawer) var(--ease-out-expo);
+  will-change: transform;
+}
+.chat-launcher:hover { transform: rotateX(12deg) translateY(-3px) scale(1.06); }
+.chat-launcher:active { transform: rotateX(-6deg) translateY(1px) scale(0.97); }
+.chat-launcher[aria-expanded='true'] { transform: rotateX(0deg) scale(0.94); }
+.chat-launcher::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.34), transparent 58%);
+  pointer-events: none;
+}
+
+/* Welcome prompt: a small card that floats in on a 3D arc. */
+.chat-greeting { transform: rotateY(-14deg) translateZ(24px); transform-origin: right bottom; }
+.chat-greeting:hover { transform: rotateY(-4deg) translateZ(32px); }
+
+@media (max-width: 640px), (hover: none), (pointer: coarse) {
+  /* A tilted panel is harder to read and costs frames on a phone. Flat, but
+     keep the depth cues that are free. */
+  .chat-panel { transform: none; }
+  .chat-panel:hover, .chat-panel:focus-within { transform: none; }
+  .chat-panel:hover .chat-plate,
+  .chat-panel:hover .chat-plate-header,
+  .chat-panel:hover .chat-plate-dials,
+  .chat-panel:hover .chat-plate-log,
+  .chat-panel:hover .chat-plate-input { transform: none; }
+  .chat-launcher:hover { transform: translateY(-2px) scale(1.04); }
+  .chat-greeting { transform: none; }
+  .chat-bubble:hover { transform: none; }
+}
+
 .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
 

@@ -5,6 +5,7 @@ import {
   type ChatbotCategory,
   type ChatbotFAQ,
   type ChatbotFallbackStyle,
+  type ChatbotLanguage,
   type ChatbotSettings,
   type ChatbotTone,
   type ContactSettings,
@@ -580,7 +581,8 @@ const CHATBOT_CATEGORIES: ChatbotCategory[] = [
   'contact',
   'work',
 ];
-const CHATBOT_TONES: ChatbotTone[] = ['professional', 'friendly'];
+const CHATBOT_TONES: ChatbotTone[] = ['professional', 'warm', 'playful'];
+const CHATBOT_LANGUAGES: ChatbotLanguage[] = ['english', 'hinglish'];
 const CHATBOT_FALLBACKS: ChatbotFallbackStyle[] = ['helpful', 'witty', 'minimal'];
 
 /**
@@ -649,7 +651,18 @@ export function normalizeChatbotSettings(
     enabled: boolKey(source, 'enabled', fallback.enabled),
     name: textKey(source, 'name', fallback.name),
     greeting: asString(source.greeting),
-    tone: asOneOf(source.tone, CHATBOT_TONES, fallback.tone),
+    // `friendly` was renamed to `warm`. An old record still carrying the old
+    // value is mapped across rather than reset to the default, so a visitor
+    // does not silently lose a tone somebody chose on purpose.
+    tone: asOneOf(
+      source.tone === 'friendly' ? 'warm' : source.tone,
+      CHATBOT_TONES,
+      fallback.tone,
+    ),
+    language: asOneOf(source.language, CHATBOT_LANGUAGES, fallback.language),
+    greetingHinglish: asString(source.greetingHinglish) || fallback.greetingHinglish,
+    allowLanguageSwitch: boolKey(source, 'allowLanguageSwitch', fallback.allowLanguageSwitch),
+    allowToneSwitch: boolKey(source, 'allowToneSwitch', fallback.allowToneSwitch),
     quickReplies: quickReplies.length > 0 ? quickReplies : fallback.quickReplies,
     sectionChips: sectionChips.length > 0 ? sectionChips : fallback.sectionChips,
     fallbackStyle: asOneOf(source.fallbackStyle, CHATBOT_FALLBACKS, fallback.fallbackStyle),

@@ -576,7 +576,13 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
     enabled: true,
     name: 'Site Assistant',
     greeting: "Hi — I'm the assistant for this site. Ask me about Mayank's work, writing, skills, or how to get in touch.",
-    tone: 'professional',
+    greetingHinglish: "Hey, main hoon is site ka assistant. Poochho — kaam, likhne ka skill, ya contact. Jo bhi chahiye, bata do.",
+    // `warm` is the default: confident and genuinely glad you asked, without
+    // the corporate register the old replies had.
+    tone: 'warm',
+    language: 'english',
+    allowLanguageSwitch: true,
+    allowToneSwitch: true,
     quickReplies: [
       { id: 'qr-portfolio', label: 'View portfolio', query: 'Take me to the portfolio' },
       { id: 'qr-writing', label: 'Read the writing', query: 'Where can I read the writing' },

@@ -485,14 +485,39 @@ export interface ResumeSettings {
   blocks: ResumeBlock[];
 }
 
-export type ChatbotTone = 'professional' | 'friendly';
+/**
+ * Reply register.
+ *
+ * `professional` stays recruiter-safe. `warm` is the default: confident and
+ * friendly, the voice of someone who is genuinely glad you asked. `playful` is
+ * the cheeky one — quick, a bit dry, and willing to be a little saucy. It is
+ * deliberately warm rather than flirty: a romance FAQ made recruiters leave.
+ */
+export type ChatbotTone = 'professional' | 'warm' | 'playful';
 export type ChatbotFallbackStyle = 'helpful' | 'witty' | 'minimal';
+
+/**
+ * Reply language.
+ *
+ * `hinglish` is Roman-script Hindi-English, not Devanagari — the register
+ * people actually type in when they want a casual Hindi answer. Keeping it in
+ * Latin script also means no font-loading change and no mixed-script line
+ * breaking on narrow phones.
+ */
+export type ChatbotLanguage = 'english' | 'hinglish';
 
 export interface ChatbotSettings {
   enabled: boolean;
   name: string;
   greeting: string;
+  /** Hinglish greeting, used when the language is `hinglish`. */
+  greetingHinglish: string;
   tone: ChatbotTone;
+  /** Default language. The visitor can still switch with the header toggle. */
+  language: ChatbotLanguage;
+  /** Let the visitor flip language and tone in the panel header. */
+  allowLanguageSwitch: boolean;
+  allowToneSwitch: boolean;
   quickReplies: { id: string; label: string; query: string }[];
   sectionChips: { id: string; label: string; target: SectionId }[];
   fallbackStyle: ChatbotFallbackStyle;

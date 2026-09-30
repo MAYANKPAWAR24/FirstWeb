@@ -4,10 +4,10 @@ import { sounds } from '@/lib/sound';
 import { useData } from '@/lib/DataContext';
 import { useEscapeKey } from '@/hooks/useFocusTrap';
 import {
-  CHATBOT_OPENING_LINE, MINIMAL_FALLBACK, TYPING_LABEL,
-  resolveChatReply, type ChatbotAction, type ChatTurn,
+  CHATBOT_OPENING_LINE, resolveChatReply, type ChatbotAction, type ChatTurn,
 } from '@/lib/chatbot';
-import type { SectionId } from '@/lib/types';
+import { toggleLabels, welcomeFor } from '@/lib/chatbotVoice';
+import type { ChatbotLanguage, ChatbotTone, SectionId } from '@/lib/types';
 
 const SESSION_KEY = 'portfolio_chat_session_v2';
 const TYPING_DELAY = 700;
@@ -89,8 +89,13 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
   const settings = data.chatbotSettings;
 
   const stored = useMemo(() => readSession(), []);
+  /** The visitor can flip either dial; both start from the admin's default. */
+  const [language, setLanguage] = useState<ChatbotLanguage>(settings.language ?? 'english');
+  const [tone, setTone] = useState<ChatbotTone>(settings.tone ?? 'professional');
   const [messages, setMessages] = useState<ChatMessage[]>(() => (
-    stored?.messages.length ? stored.messages : [{ id: nextId(), from: 'bot', text: settings.greeting || CHATBOT_OPENING_LINE }]
+    stored?.messages.length
+      ? stored.messages
+      : [{ id: nextId(), from: 'bot', text: settings.greeting || CHATBOT_OPENING_LINE }]
   ));
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
@@ -102,6 +107,8 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const timers = useRef<number[]>([]);
+  /** Advances per reply so the opener/closer/fallback lines rotate. */
+  const rotationRef = useRef(0);
 
   useEffect(() => {
     if (messageId < 60) messageId = 60;
@@ -164,13 +171,13 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
     setMessages((current) => [...current, userTurn]);
     setTyping(true);
 
-    const reply = resolveChatReply(text, messages, data.chatbotFAQs);
+    const reply = resolveChatReply(text, messages, data.chatbotFAQs, {
+      language, tone, rotation: rotationRef.current++,
+    });
     const botTurn: ChatMessage = {
       id: nextId(),
       from: 'bot',
-      text: settings.fallbackStyle === 'minimal' && reply.kind === 'fallback'
-        ? MINIMAL_FALLBACK
-        : reply.text,
+      text: reply.text,
       kind: reply.kind,
       fromCloud: reply.fromCloud,
       actions: reply.actions?.filter((action) => !isHidden(action.target)),
@@ -190,11 +197,13 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
 
   if (!settings.enabled) return null;
 
+  const copy = toggleLabels(language);
+
   return (
     <>
       {greetingOpen && !open && (
         <div
-          className="animate-drawer-in fixed bottom-24 right-4 z-[60] w-[min(19rem,calc(100vw-2rem))] rounded-panel border border-[var(--line)] bg-[var(--surface)] p-4 shadow-[0_18px_50px_-24px_rgba(12,12,17,0.5)] sm:right-6"
+          className="chat-greeting fixed bottom-24 right-4 z-[60] w-[min(19rem,calc(100vw-2rem))] rounded-panel border border-[var(--line)] bg-[var(--surface)] p-4 shadow-[0_18px_50px_-24px_rgba(12,12,17,0.5)] sm:right-6"
           role="status"
         >
           <div className="flex items-start gap-2.5">
@@ -214,12 +223,13 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
       )}
 
       {open && (
+        <div className="chat-scene fixed inset-0 z-[60]">
         <div
           role="dialog"
           aria-label={`${settings.name} chat`}
-          className="fixed bottom-24 right-4 z-[60] flex h-[min(30rem,74dvh)] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-panel border border-[var(--line)] bg-[var(--surface)] shadow-[0_18px_50px_-20px_rgba(12,12,17,0.45)] sm:right-6 sm:w-96"
+          className="chat-panel chat-sheen fixed bottom-24 right-4 flex h-[min(30rem,74dvh)] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-panel border border-[var(--line)] bg-[var(--surface)] shadow-[0_18px_50px_-20px_rgba(12,12,17,0.45)] sm:right-6 sm:w-96"
         >
-          <header className="flex shrink-0 items-center gap-3 border-b border-[var(--line)] bg-[var(--surface-2)] px-4 py-3">
+          <header className="chat-plate chat-plate-header relative z-10 flex shrink-0 items-center gap-3 border-b border-[var(--line)] bg-[var(--surface-2)] px-4 py-3">
             <span
               aria-hidden="true"
               className="grid h-8 w-8 flex-none place-items-center rounded-full bg-gradient-to-br from-[#0c6899] to-[#6146df] text-white"
@@ -239,6 +249,68 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
             </button>
           </header>
 
+          {(settings.allowLanguageSwitch || settings.allowToneSwitch) && (
+            <div className="chat-plate chat-plate-dials relative z-10 flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[var(--line)] bg-[var(--surface)] px-3 py-2">
+              {settings.allowLanguageSwitch && (
+                <div className="flex items-center gap-1" role="group" aria-label={copy.ariaLanguage}>
+                  {(['english', 'hinglish'] as ChatbotLanguage[]).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={language === option}
+                      onClick={() => {
+                        sounds.click();
+                        setLanguage(option);
+                        setMessages((current) => [
+                          ...current,
+                          {
+                            id: nextId(),
+                            from: 'bot',
+                            text: welcomeFor(option, tone, rotationRef.current++),
+                            kind: 'greeting',
+                          },
+                        ]);
+                      }}
+                      onMouseEnter={() => sounds.hover()}
+                      className="chat-dial"
+                    >
+                      {copy[option]}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {settings.allowToneSwitch && (
+                <div className="flex items-center gap-1" role="group" aria-label={copy.ariaTone}>
+                  {(['professional', 'warm', 'playful'] as ChatbotTone[]).map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      aria-pressed={tone === option}
+                      onClick={() => {
+                        sounds.click();
+                        setTone(option);
+                        setMessages((current) => [
+                          ...current,
+                          {
+                            id: nextId(),
+                            from: 'bot',
+                            text: welcomeFor(language, option, rotationRef.current++),
+                            kind: 'greeting',
+                          },
+                        ]);
+                      }}
+                      onMouseEnter={() => sounds.hover()}
+                      className="chat-dial"
+                    >
+                      {copy[option]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* `role="log"` + polite live region: bot replies are announced
               without interrupting whatever the user is doing. */}
           <div
@@ -247,7 +319,7 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
             aria-live="polite"
             aria-busy={typing}
             aria-label="Conversation"
-            className="scroll-y min-h-0 flex-1 space-y-3 px-4 py-4"
+            className="chat-plate chat-plate-log scroll-y relative z-10 min-h-0 flex-1 space-y-3 px-4 py-4"
           >
             {messages.map((message) => (
               <div key={message.id} className={message.from === 'user' ? 'flex justify-end' : 'flex justify-start'}>
@@ -290,12 +362,12 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
             {typing && (
               <div className="flex justify-start">
                 <div className="rounded-2xl rounded-bl-md border border-[var(--line)] bg-[var(--surface-2)] px-3.5 py-3">
-                  <span className="sr-only">{TYPING_LABEL}</span>
+                  <span className="sr-only">{copy.thinking}</span>
                   <span aria-hidden="true" className="flex gap-1">
                     {[0, 1, 2].map((dot) => (
                       <span
                         key={dot}
-                        className="h-1.5 w-1.5 rounded-full bg-[var(--faint)] motion-safe:animate-bounce"
+                        className="chat-typing-dot h-1.5 w-1.5 rounded-full bg-[var(--faint)]"
                         style={{ animationDelay: `${dot * 140}ms` }}
                       />
                     ))}
@@ -339,7 +411,7 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
 
           <form
             onSubmit={(event) => { event.preventDefault(); send(input); }}
-            className="flex shrink-0 items-center gap-2 border-t border-[var(--line)] bg-[var(--surface-2)] px-3 py-2.5"
+            className="chat-plate chat-plate-input relative z-10 flex shrink-0 items-center gap-2 border-t border-[var(--line)] bg-[var(--surface-2)] px-3 py-2.5"
           >
             <label htmlFor="chat-input" className="sr-only">Message {settings.name}</label>
             <input
@@ -349,7 +421,7 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
               value={input}
               maxLength={280}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Ask about the work, writing or contact…"
+              placeholder={copy.placeholder}
               autoComplete="off"
               className="field h-10 min-h-0 flex-1 py-2 text-[13px]"
             />
@@ -365,6 +437,7 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
             </button>
           </form>
         </div>
+        </div>
       )}
 
       <button
@@ -374,7 +447,7 @@ export default function AIChatbot({ onNavigate, isHidden }: AIChatbotProps) {
         onMouseEnter={() => sounds.hover()}
         aria-expanded={open}
         aria-label={open ? 'Close assistant' : `Open ${settings.name}`}
-        className="fixed bottom-5 right-5 z-[60] grid h-13 w-13 place-items-center rounded-full bg-gradient-to-br from-[#0c6899] to-[#6146df] p-3.5 text-white shadow-[0_14px_34px_-12px_rgba(12,79,126,0.7)] transition-transform duration-[var(--dur-hover)] hover:scale-105 active:scale-95 sm:bottom-6 sm:right-6"
+        className="chat-launcher fixed bottom-5 right-5 z-[60] grid h-13 w-13 place-items-center rounded-full bg-gradient-to-br from-[#0c6899] to-[#6146df] p-3.5 text-white shadow-[0_14px_34px_-12px_rgba(12,79,126,0.7)] sm:bottom-6 sm:right-6"
       >
         {open ? <X size={18} aria-hidden="true" /> : <Bot size={18} aria-hidden="true" />}
       </button>

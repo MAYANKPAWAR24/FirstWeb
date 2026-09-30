@@ -1,4 +1,5 @@
-import type { ChatbotFAQ, SectionId } from './types';
+import type { ChatbotFAQ, ChatbotLanguage, ChatbotTone, SectionId } from './types';
+import { fallbackFor, flavourAnswer, multiTurnFor, welcomeFor } from './chatbotVoice';
 
 /**
  * The assistant engine.
@@ -26,6 +27,12 @@ export interface EmbeddedFAQ {
   keywords: string[];
   synonyms?: string[];
   response: string;
+  /**
+   * A genuinely different line, not a word-substituted one. Hinglish is a
+   * register rather than a wrapper, so every entry carries one and falls back
+   * to `response` only when it is missing.
+   */
+  hinglish?: string;
   category?: ChatbotCategory;
   /** Section the widget offers a jump button for. */
   section?: SectionId;
@@ -44,6 +51,13 @@ export interface ChatbotAction {
 }
 
 export type ChatbotReplyKind = 'faq' | 'multi-turn' | 'fallback' | 'greeting';
+
+export interface VoiceOptions {
+  language: ChatbotLanguage;
+  tone: ChatbotTone;
+  /** Rotates openers, closers and fallbacks so replies do not repeat. */
+  rotation?: number;
+}
 
 export interface ChatbotReply {
   text: string;
@@ -80,6 +94,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['who is mayank', 'who are you', 'about mayank', 'about you', 'introduce', 'who is this', 'tell me about'],
     synonyms: ['who r u', 'your name', 'bio', 'about the author', 'who owns this site'],
+    hinglish:
+      'Mayank Pawar — writer aur developer, dono. Matlab ek taraf se poetry aur novels, doosri taraf se front-end aur product engineering. Kaam literature aur technology ke beech se nikalta hai. Poora background About section mein hai.',
     category: 'general',
     section: 'profile',
     response:
@@ -88,6 +104,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['portfolio', 'my work', 'show me the work', 'projects', 'what has he built', 'case study'],
     synonyms: ['your work', 'showcase', 'builds', 'made', 'portfolio work', 'examples'],
+    hinglish:
+      'Portfolio wahi section hai jo pehle padhna chahiye. Usme professional summary hai, kya kya build karta hai, aur case studies — is website ki bhi, jo React aur TypeScript se bani hai, poori admin CMS ke saath, cloud sync, knowledge-base chatbot aur aath games.',
     category: 'work',
     section: 'portfolio',
     response:
@@ -96,6 +114,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['skills', 'tech stack', 'what can he do', 'languages', 'tools', 'expertise', 'stack'],
     synonyms: ['what does he know', 'technologies', 'framework', 'languages he knows', 'skillset'],
+    hinglish:
+      'Skills ek flat list mein nahi, groups mein hain — Creative, Technical, Workflow aur Tools, aur Communication. Isliye poora range ek nazar mein dikhta hai.',
     category: 'recruiter',
     section: 'profile',
     response:
@@ -104,6 +124,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['where can i read', 'literature', 'poems', 'writing', 'novel', 'books', 'read'],
     synonyms: ['show me the writing', 'poetry', 'published work', 'your writing', 'shayari'],
+    hinglish:
+      'Literature section mein poems aur novels hain. Har ek distraction-free reader mein khulta hai, saath reading progress bar bhi. Har piece ke end pe related works bhi suggest hote hain.',
     category: 'writing',
     section: 'literature',
     response:
@@ -112,6 +134,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['media', 'photos', 'videos', 'gallery', 'photography', 'music', 'watch'],
     synonyms: ['show me photos', 'images', 'youtube', 'video gallery', 'what does it look like'],
+    hinglish:
+      'Media gallery mein photography, video aur audio hai, full-screen viewer ke saath, aur keyboard se bhi items ke beech navigate kar sakte ho.',
     category: 'media',
     section: 'media',
     response:
@@ -120,6 +144,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['how can i contact', 'contact', 'email', 'get in touch', 'reach', 'hire', 'available'],
     synonyms: ['email address', 'message', 'talk to', 'work together', 'freelance', 'collaborate', 'commission'],
+    hinglish:
+      'Contact section mein direct email hai, ek message form hai jo aapka apna mail app kholega, aur saare social profiles. Naye kaam ke liye availability Portfolio section ke top par hai.',
     category: 'contact',
     section: 'contact',
     response:
@@ -128,6 +154,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['resume', 'cv', 'download', 'credentials', 'certificate'],
     synonyms: ['resume link', 'download cv', 'qualification', 'certificates'],
+    hinglish:
+      'Resume link Portfolio section ke top par dikhta hai, jab admin ne ek file upload ki ho. Saare certificates list hote hain, har ek ke saath verify karne ka link.',
     category: 'recruiter',
     section: 'certificates',
     response:
@@ -136,6 +164,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['achievements', 'awards', 'milestones', 'what has he won', 'speaking'],
     synonyms: ['accomplishments', 'recognition', 'talks', 'keynote', 'published author'],
+    hinglish:
+      'Achievements timeline mein writing awards, publications, talks aur technical wins hain, category ke hisaab se group kiye hue.',
     category: 'general',
     section: 'achievements',
     response:
@@ -144,6 +174,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['what is this site', 'what can i explore', 'how is this built', 'what is this website'],
     synonyms: ['what is this', 'sections', 'how does this work', 'tell me about the site', 'how was this made'],
+    hinglish:
+      'Yeh ek personal platform hai jo portfolio bhi hai aur reading room bhi. Har section — hero, about, portfolio, literature, media, resources, achievements, certificates, contact, community — admin panel se edit hota hai aur cloud pe sync hota hai, saath local copy bhi hai taaki network na ho tab bhi kuch na kho.',
     category: 'general',
     response:
       "This is a personal platform that works as both a portfolio and a reading room. Every section — hero, about, portfolio, literature, media, resources, achievements, certificates, contact and community — is edited from an admin panel and synced to the cloud, with a local copy as a fallback so nothing is lost when the network is unavailable.",
@@ -151,6 +183,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['games', 'play', 'mini games', 'interactive', 'games section'],
     synonyms: ['play break', 'snake', 'tic tac toe', '2048', 'bored', 'have fun'],
+    hinglish:
+      'Play Break section hai jismein aath self-contained games hain — Tic-Tac-Toe jo real minimax AI se khelta hai 3x3 ya 4x4 board pe, Snake, 2048, Memory Match, Math Sprint aur reaction-time test.',
     category: 'general',
     section: 'games',
     response:
@@ -159,6 +193,8 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['notes', 'resources', 'study material', 'downloads', 'guides', 'cheatsheet'],
     synonyms: ['study', 'learning material', 'pdf', 'documents', 'reference'],
+    hinglish:
+      'Study Material ek chhoti library hai — guides, references aur workshop notes, tag ke hisaab se group kiye hue. Jin files ka wait kar rahe hain unpe saaf-saaf likha hota hai.',
     category: 'general',
     section: 'study',
     response:
@@ -167,12 +203,16 @@ export const DEFAULT_CHATBOT_FAQS: EmbeddedFAQ[] = [
   {
     keywords: ['hello', 'hi', 'hey', 'good morning', 'good evening', 'good afternoon'],
     synonyms: ['yo', 'sup', 'howdy', 'hiya'],
+    hinglish:
+      'Hello. Poochho portfolio, writing, skills ya contact ke baare mein — ya neeche se koi bhi suggestion chun lo.',
     category: 'general',
     response: "Hello. Ask me about the portfolio, the writing, skills, or how to get in touch — or pick one of the suggestions below.",
   },
   {
     keywords: ['thanks', 'thank you', 'cheers', 'helpful', 'nice'],
     synonyms: ['great', 'awesome', 'perfect', 'appreciate it'],
+    hinglish:
+      'Koi baat nahi. Kuch bhi detail mein poochna ho, Portfolio aur Contact sabse seedha raaste hain.',
     category: 'general',
     response: 'Any time. If you want the long version of anything, the Portfolio and Contact sections are the fastest route.',
   },
@@ -194,6 +234,20 @@ export const CHATBOT_SUGGESTIONS = QUICK_REPLIES.map((reply) => reply.query);
 function responseOf(faq: EngineFAQ): string {
   const value = 'answer' in faq ? faq.answer : faq.response;
   return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
+ * The answer in the visitor's language.
+ *
+ * Only the embedded dataset carries a Hinglish variant. An admin-authored FAQ
+ * stays in whatever language the admin wrote it, because silently translating
+ * somebody's own words would misrepresent it — so the English answer is used
+ * and the flavour layer does the framing instead.
+ */
+function responseFor(faq: EngineFAQ, language: ChatbotLanguage): string {
+  const hinglish = 'hinglish' in faq && typeof faq.hinglish === 'string' ? faq.hinglish.trim() : '';
+  if (language === 'hinglish' && hinglish) return hinglish;
+  return responseOf(faq);
 }
 
 function keywordsOf(faq: EngineFAQ): string[] {
@@ -327,21 +381,25 @@ function actionsFor(faq: EngineFAQ): ChatbotAction[] | undefined {
   return [{ label: `Take me to ${label.toLowerCase()}`, target: section }];
 }
 
-/** Resolves a user message. Returns text plus any section-jump actions. */
+/** Resolves a user message, in the visitor's chosen language and tone. */
 export function resolveChatReply(
   userMessage: string,
   chatHistory: ChatTurn[] | unknown[] = [],
   dynamicFAQs?: ChatbotFAQ[] | null,
+  voice?: Partial<VoiceOptions>,
 ): ChatbotReply {
   const query = userMessage.toLowerCase().trim();
   const knowledge = buildKnowledge(dynamicFAQs);
+  const language = voice?.language ?? 'english';
+  const tone = voice?.tone ?? 'professional';
+  const rotation = voice?.rotation ?? 0;
 
   if (!query) {
     return {
-      text: CHATBOT_OPENING_LINE,
+      text: welcomeFor(language, tone, rotation),
       kind: 'greeting',
       fromCloud: false,
-      actions: [{ label: 'Take me to the portfolio', target: 'portfolio' }],
+      actions: [{ label: 'Portfolio kholo', target: 'portfolio' }],
     };
   }
 
@@ -357,26 +415,34 @@ export function resolveChatReply(
     }
   }
 
+  const turns = countTurns(chatHistory);
+
   if (bestMatch && bestScore > 0) {
+    const base = responseFor(bestMatch.faq, language);
     const managedId = 'id' in bestMatch.faq ? bestMatch.faq.id : undefined;
     return {
-      text: responseOf(bestMatch.faq),
+      text: flavourAnswer(base, language, tone, rotation, turns > 2),
       kind: 'faq',
       fromCloud: bestMatch.fromCloud,
       faq: managedId ? (bestMatch.faq as ChatbotFAQ) : undefined,
       actions: actionsFor(bestMatch.faq),
     };
   }
-  if (countTurns(chatHistory) >= 5) {
+
+  if (turns >= 5) {
     return {
-      text: "That's a few questions deep — I've probably run out of things I know. For anything specific, the Contact section reaches Mayank directly.",
+      text: multiTurnFor(language, tone),
       kind: 'multi-turn',
       fromCloud: false,
-      actions: [{ label: 'Take me to contact', target: 'contact' }],
+      actions: [{ label: 'Contact section', target: 'contact' }],
     };
   }
 
-  return { text: HELP_FALLBACKS[Math.floor(Math.random() * HELP_FALLBACKS.length)], kind: 'fallback', fromCloud: false };
+  return {
+    text: fallbackFor(language, tone, rotation),
+    kind: 'fallback',
+    fromCloud: false,
+  };
 }
 
 /** Text-only convenience wrapper, kept for the existing call signature. */
@@ -384,8 +450,9 @@ export function getSmartChatResponse(
   userMessage: string,
   chatHistory: ChatTurn[] | unknown[] = [],
   dynamicFAQs?: ChatbotFAQ[] | null,
+  voice?: Partial<VoiceOptions>,
 ): string {
-  return resolveChatReply(userMessage, chatHistory, dynamicFAQs).text;
+  return resolveChatReply(userMessage, chatHistory, dynamicFAQs, voice).text;
 }
 
 /**

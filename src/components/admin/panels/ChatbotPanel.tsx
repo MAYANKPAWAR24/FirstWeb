@@ -24,9 +24,22 @@ const CATEGORIES = [
 ];
 
 const TONE_OPTIONS = [
-  { value: 'professional', label: 'Professional' },
-  { value: 'friendly', label: 'Friendly' },
+  { value: 'professional', label: 'Professional — recruiter-safe, plain' },
+  { value: 'warm', label: 'Warm — confident and glad you asked (default)' },
+  { value: 'playful', label: 'Playful — cheeky, a bit dry, still warm' },
 ];
+
+const LANGUAGE_OPTIONS = [
+  { value: 'english', label: 'English' },
+  { value: 'hinglish', label: 'Hinglish — Roman-script Hindi/English' },
+];
+
+/** Preview lines so the admin can hear the difference before saving. */
+const TONE_PREVIEW: Record<string, string> = {
+  professional: '"Here is what I can tell you. Mayank Pawar is a writer and software developer…"',
+  warm: '"Good question — here is the honest version. Mayank Pawar is a writer and software developer…"',
+  playful: '"Alright, let us get into it. Mayank Pawar is a writer and software developer…"',
+};
 
 const FALLBACK_OPTIONS = [
   { value: 'helpful', label: 'Helpful — full explanations' },
@@ -102,7 +115,45 @@ export default function ChatbotPanel() {
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <Toggle label="Enabled" hint="Hides the launcher entirely when off." checked={settings.enabled} onChange={(enabled) => patchSettings('enabled', enabled)} />
-              <Select label="Tone" value={settings.tone} options={TONE_OPTIONS} onChange={(tone) => patchSettings('tone', tone as ChatbotSettings['tone'])} />
+              <Select
+                label="Default language"
+                value={settings.language}
+                options={LANGUAGE_OPTIONS}
+                hint="Visitors can switch in the panel header unless you turn that off below."
+                onChange={(language) => patchSettings('language', language as ChatbotSettings['language'])}
+              />
+              <p className="mt-2 rounded-card border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2.5 text-[12px] leading-relaxed text-[var(--muted)]">
+                {TONE_PREVIEW[settings.tone] ?? TONE_PREVIEW.warm}
+              </p>
+              <div className="mt-3">
+                <Select
+                  label="Tone"
+                  value={settings.tone}
+                  options={TONE_OPTIONS}
+                  hint="Changes how answers are delivered. The facts stay the same in every tone."
+                  onChange={(tone) => patchSettings('tone', tone as ChatbotSettings['tone'])}
+                />
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Toggle
+                  label="Let visitors switch language"
+                  checked={settings.allowLanguageSwitch}
+                  onChange={(allowLanguageSwitch) => patchSettings('allowLanguageSwitch', allowLanguageSwitch)}
+                />
+                <Toggle
+                  label="Let visitors switch tone"
+                  checked={settings.allowToneSwitch}
+                  onChange={(allowToneSwitch) => patchSettings('allowToneSwitch', allowToneSwitch)}
+                />
+              </div>
+              <div className="mt-3">
+                <Field
+                  label="Hinglish greeting"
+                  value={settings.greetingHinglish}
+                  onChange={(greetingHinglish) => patchSettings('greetingHinglish', greetingHinglish)}
+                  hint="Shown when a visitor switches to Hinglish."
+                />
+              </div>
             </div>
             <Field label="Name" value={settings.name} onChange={(value) => patchSettings('name', value)} maxLength={40} />
             <Textarea label="Opening line" value={settings.greeting} onChange={(value) => patchSettings('greeting', value)} rows={2} />
