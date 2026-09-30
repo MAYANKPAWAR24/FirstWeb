@@ -43,6 +43,8 @@ function AppContent() {
   const [activeSection, setActiveSection] = useState<SectionId>('home');
   const [searchSelection, setSearchSelection] = useState<PortfolioSearchResult | null>(null);
 
+  const { animationSettings } = data;
+
   const visibleSectionOrder = useMemo(
     () => sectionOrder.filter((id) => isSectionVisible(id)),
     [sectionOrder, isSectionVisible],
@@ -105,14 +107,13 @@ function AppContent() {
    * ambient layers, so the admin's toggle genuinely stops work rather
    * than just hiding it.                                          */
   useEffect(() => {
-    const { animationSettings } = data;
     const level = !animationSettings.enabled || animationSettings.intensity === 'off'
       ? 'off'
       : animationSettings.intensity;
     document.documentElement.dataset.motion = level;
     document.documentElement.dataset.ambient = String(animationSettings.ambientEffects);
     document.documentElement.dataset.cursor = String(animationSettings.cursorEffects);
-  }, [data.animationSettings]);
+  }, [animationSettings]);
 
   /* ---- Document head ------------------------------------------------
    * The static <head> in index.html is a fallback. Everything an admin

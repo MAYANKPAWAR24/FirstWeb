@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from 'react';
+import { dispatchEscape, pushEscapeLayer } from './escapeStack';
 
 /**
  * Traps keyboard focus inside `ref` while `active`, and returns focus to the
@@ -79,22 +80,28 @@ export function useFocusTrap(ref: RefObject<HTMLElement>, active: boolean) {
 }
 
 /**
- * Runs `onEscape` when Escape is pressed, and stops there.
+ * Runs `onEscape` when Escape is pressed, and consumes it.
  *
- * Overlays compose (a chat panel can open while the nav drawer is closing), so
- * Escape is consumed by the topmost layer only: the handler that fires first
- * calls `event.stopPropagation()`. Without that, one Escape press can close two
- * overlays at once.
+ * Overlays compose, so only the topmost layer reacts. See `escapeStack.ts` for
+ * why `stopPropagation` is not sufficient and how the ordering is enforced.
  */
 export function useEscapeKey(active: boolean, onEscape: () => void) {
   useEffect(() => {
     if (!active) return;
+    const remove = pushEscapeLayer(onEscape);
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      event.stopPropagation();
-      onEscape();
+      // Claim the event here so stale listeners still attached to `document`
+      // cannot also react to the same press.
+      event.stopImmediatePropagation();
+      dispatchEscape();
     };
+
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    return () => {
+      remove();
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [active, onEscape]);
 }

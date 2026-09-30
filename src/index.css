@@ -61,7 +61,7 @@
   --dur-reveal: 620ms;
 
   /* Depth. Never applied to an ancestor of a `position: fixed`
-     descendant — see the note on `.gpu-layer`. */
+     descendant — see the note on `.gpu-accelerated`. */
   --z-nav: 1000;
   --z-raised: 50;
   --z-dialog: 9200;

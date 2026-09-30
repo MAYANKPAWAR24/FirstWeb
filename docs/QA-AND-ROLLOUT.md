@@ -197,6 +197,32 @@ Manual:
 
 ## 7. CLOUD SYNC & API
 
+`api/portfolio.js` is framework-free, so it was verified directly against a
+mocked JSONBin — 53 assertions, all passing.
+
+| Property | Result |
+|---|---|
+| GET never returns `__adminAuth` or `adminPassword` | 2/2 |
+| `__adminAuth` is re-attached from the **stored** hash on PUT, patch and import | 3/3 |
+| `adminPassword` is never written | pass |
+| Forged and malformed session cookies rejected | 2/2 |
+| Cookie is an HMAC, not the password; HttpOnly + SameSite=Lax + Path=/ | 2/2 |
+| PUT / import / change-password without a session → 401 | 3/3 |
+| Login rate limited, and the limit is **per IP** | 2/2 |
+| `extra` expands, `follow` drops, unknown ids strip, all 10 sections present | 4/4 |
+| Legacy `guestbook` visibility key maps to `community` | pass |
+| Absent visibility key stays absent (absent == visible) | pass |
+| Scoped `patch` writes only its key and preserves the rest | 3/3 |
+| Guestbook trims, strips HTML, derives an avatar, clamps to 500 chars | 4/4 |
+| Honeypot returns 200 with an empty entry and stores nothing | 2/2 |
+| `PORTFOLIO_GUESTBOOK_AUTOAPPROVE=false` marks entries unapproved | pass |
+| Guestbook and visitor are rate limited | 2/2 |
+| Change-password rejects short values and stores a hash, not plaintext | 3/3 |
+| Missing credentials → 503 naming the env var; rejected → 502 naming it | 2/2 |
+| 405 on unsupported method, 400 on unknown action and bad payload | 3/3 |
+
+Still worth confirming against a **real** bin:
+
 - [ ] GET returns `sectionOrder` + `sectionVisibility`, never `__adminAuth`
 - [ ] PUT without a session → 401
 - [ ] POST `login` with a wrong password → 401, no session cookie

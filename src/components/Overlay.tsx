@@ -33,8 +33,14 @@ interface OverlayProps {
   showClose?: boolean;
 }
 
-export default function Overlay({
-  open,
+/**
+ * How many overlays are currently applying `inert` to the page behind. Shared
+ * across instances so a nested dialog closing cannot re-enable content that an
+ * outer dialog is still covering.
+ */
+let inertDepth = 0;
+
+export default function Overlay({  open,
   onClose,
   labelledBy,
   label,
@@ -56,15 +62,19 @@ export default function Overlay({
   }, [open]);
 
   // The page behind must leave the accessibility tree, not just the visual one.
+  //
+  // Ref-counted, because overlays compose: the admin panel contains a modal, and
+  // when that inner modal closed it used to strip `inert` back off <main>,
+  // silently re-enabling the public page behind a still-open admin panel.
   useEffect(() => {
     if (!open) return;
-    const main = document.querySelector('main');
-    const nav = document.querySelector('nav');
-    main?.setAttribute('inert', '');
-    nav?.setAttribute('inert', '');
+    const hidden = ['main', 'nav'].map((selector) => document.querySelector(selector))
+      .filter((element): element is Element => Boolean(element));
+    hidden.forEach((element) => element.setAttribute('inert', ''));
+    inertDepth += 1;
     return () => {
-      main?.removeAttribute('inert');
-      nav?.removeAttribute('inert');
+      inertDepth = Math.max(0, inertDepth - 1);
+      if (inertDepth === 0) hidden.forEach((element) => element.removeAttribute('inert'));
     };
   }, [open]);
 
