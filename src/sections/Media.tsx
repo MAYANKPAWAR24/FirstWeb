@@ -183,7 +183,7 @@ function MediaCard({ item, onOpen }: { item: MediaItem; onOpen: () => void }) {
       </div>
 
       <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
-        <span className="truncate text-[13px] font-semibold text-[var(--ink)]">{item.title}</span>
+        <h3 className="truncate text-[13px] font-semibold text-[var(--ink)]">{item.title}</h3>
         <span className="shrink-0 text-[11px] text-[var(--faint)]">{formatDate(item.date)}</span>
       </div>
     </>
@@ -201,15 +201,21 @@ function MediaCard({ item, onOpen }: { item: MediaItem; onOpen: () => void }) {
             </div>
           </div>
         ) : (
-          <button
-            type="button"
-            onClick={onOpen}
-            onMouseEnter={() => sounds.hover()}
-            className="card card-interactive card-sheen group flex h-full w-full flex-col overflow-hidden text-left"
-          >
-            <span className="sr-only">Open {item.title}</span>
+          // A <button> may only contain phrasing content, so the card is a
+          // container and the real control sits in the title row. Its ::after
+          // overlay makes the whole card clickable without nesting blocks
+          // inside a button, which is invalid HTML.
+          <div className="card card-interactive card-sheen group flex h-full w-full flex-col overflow-hidden">
             {body}
-          </button>
+            <button
+              type="button"
+              onClick={onOpen}
+              onMouseEnter={() => sounds.hover()}
+              className="card-action sr-only"
+            >
+              Open {item.title}
+            </button>
+          </div>
         )}
       </TiltCard>
     </div>

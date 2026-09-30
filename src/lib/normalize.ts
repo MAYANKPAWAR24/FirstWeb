@@ -25,7 +25,11 @@ import {
   type SeoSettings,
   type SkillGroupId,
   type SkillGroups,
+  type SoundSettings,
+  type LeaderboardSettings,
+  type OfficialScore,
 } from './types';
+import { MAX_ENTRIES, sanitizePlayerName } from './gameScores';
 
 /**
  * Migration-safe normalizers for every Phase 2 settings key.
@@ -83,9 +87,14 @@ function asFiniteInt(value: unknown, fallback: number): number {
 }
 
 function asOneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return (asOneOfOrNull(value, allowed) ?? fallback) as T;
+}
+
+/** Like `asOneOf`, but signals "no valid value" as `null` instead of defaulting. */
+function asOneOfOrNull<T extends string>(value: unknown, allowed: readonly T[]): T | null {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
     ? (value as T)
-    : fallback;
+    : null;
 }
 
 function boolKey(value: UnknownRecord, key: string, fallback: boolean): boolean {
@@ -344,6 +353,67 @@ export function normalizeGameSettings(
     featured: asOneOf(source.featured, MINI_GAME_KINDS, fallback.featured),
     hidden: pick('hidden'),
     order: order.length > 0 ? order : fallback.order,
+  };
+}
+
+export function normalizeSoundSettings(
+  value: unknown,
+  fallback: SoundSettings,
+): SoundSettings | undefined {
+  if (value === undefined) return undefined;
+  const source = isRecord(value) ? value : {};
+  const rawVolume = Number(source.defaultVolume);
+  return {
+    allowed: boolKey(source, 'allowed', fallback.allowed),
+    gameSounds: boolKey(source, 'gameSounds', fallback.gameSounds),
+    // Clamped: an out-of-range stored value must never come back as 400%.
+    defaultVolume: Number.isFinite(rawVolume)
+      ? Math.max(0, Math.min(1, rawVolume))
+      : fallback.defaultVolume,
+  };
+}
+
+export function normalizeLeaderboardSettings(
+  value: unknown,
+  fallback: LeaderboardSettings,
+): LeaderboardSettings | undefined {
+  if (value === undefined) return undefined;
+  const source = isRecord(value) ? value : {};
+  const rawLimit = Number(source.limit);
+
+  const officialEntries: OfficialScore[] = [];
+  const seen = new Set<string>();
+  asArray(source.officialEntries).filter(isRecord).forEach((raw, index) => {
+    const id = asString(raw.id).trim() || `official-${index + 1}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+
+    const name = sanitizePlayerName(asString(raw.name));
+    // An entry that cannot be attributed to a real game would be filed under
+    // the fallback and show up on the wrong board, so it is dropped rather
+    // than defaulted. Same rule as an unusable name.
+    const game = asOneOfOrNull(raw.game, MINI_GAME_KINDS);
+    if (name.length < 2 || !game) return;
+
+    officialEntries.push({
+      id,
+      game,
+      name,
+      score: Number.isFinite(Number(raw.score)) ? Math.max(0, Math.trunc(Number(raw.score))) : 0,
+      date: asString(raw.date) || new Date().toISOString(),
+    });
+  });
+
+  return {
+    enabled: boolKey(source, 'enabled', fallback.enabled),
+    title: textKey(source, 'title', fallback.title),
+    limit: Number.isFinite(rawLimit)
+      ? Math.max(3, Math.min(MAX_ENTRIES, Math.trunc(rawLimit)))
+      : fallback.limit,
+    requireName: boolKey(source, 'requireName', fallback.requireName),
+    namePlaceholder: textKey(source, 'namePlaceholder', fallback.namePlaceholder),
+    showLocal: boolKey(source, 'showLocal', fallback.showLocal),
+    officialEntries,
   };
 }
 

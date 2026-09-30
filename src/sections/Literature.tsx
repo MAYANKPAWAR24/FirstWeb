@@ -140,13 +140,11 @@ export default function Literature({ poems, searchTarget }: LiteratureProps) {
             {displayed.map((poem) => (
               <div key={poem.id} id={`search-target-literature-${poem.id}`} data-reveal-item>
                 <TiltCard lit maxTilt={2} className="h-full">
-                  <button
-                    type="button"
-                    onClick={() => { sounds.open(); setSelected(poem); }}
-                    onMouseEnter={() => sounds.hover()}
-                    className="card card-interactive card-sheen group flex h-full w-full flex-col overflow-hidden rounded-card text-left"
-                    aria-label={`Read ${poem.title}`}
-                  >
+                  {/* The card is a container, not a button: a <button> may only
+                      hold phrasing content, and this one holds headings and
+                      paragraphs. The real control lives in the <h3> and its
+                      ::after overlay makes the whole card clickable. */}
+                  <div className="card card-interactive card-sheen group flex h-full w-full flex-col overflow-hidden rounded-card">
                     <div className={`relative h-36 shrink-0 overflow-hidden bg-gradient-to-br ${poem.coverGradient}`}>
                       <div
                         className="absolute inset-0 opacity-25 transition-transform duration-[var(--dur-drawer)] ease-[var(--ease-out-expo)] group-hover:scale-110"
@@ -181,7 +179,15 @@ export default function Literature({ poems, searchTarget }: LiteratureProps) {
 
                     <div className="flex flex-1 flex-col p-5">
                       <h3 className="font-display text-[17px] font-bold leading-snug tracking-tight text-[var(--ink)]">
-                        {poem.title}
+                        <button
+                          type="button"
+                          onClick={() => { sounds.open(); setSelected(poem); }}
+                          onMouseEnter={() => sounds.hover()}
+                          className="card-action"
+                        >
+                          {poem.title}
+                          <span className="sr-only"> — read in full</span>
+                        </button>
                       </h3>
                       <p className="mt-1.5 line-clamp-3 flex-1 text-[13.5px] leading-relaxed text-[var(--muted)]">
                         {excerptOf(poem)}
@@ -203,7 +209,7 @@ export default function Literature({ poems, searchTarget }: LiteratureProps) {
                         </span>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 </TiltCard>
               </div>
             ))}

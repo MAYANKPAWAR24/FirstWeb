@@ -108,7 +108,9 @@ export type MiniGameKind =
   | 'memory'
   | 'twenty-forty-eight'
   | 'rock-paper-scissors'
-  | 'reaction';
+  | 'reaction'
+  | 'word-forge'
+  | 'math-sprint';
 
 export const CUSTOM_SECTION_TYPES: CustomSectionType[] = ['text', 'media', 'widget', 'game'];
 export const MINI_GAME_KINDS: MiniGameKind[] = [
@@ -118,6 +120,8 @@ export const MINI_GAME_KINDS: MiniGameKind[] = [
   'twenty-forty-eight',
   'rock-paper-scissors',
   'reaction',
+  'word-forge',
+  'math-sprint',
 ];
 
 export interface CustomSection {
@@ -198,6 +202,8 @@ export interface PortfolioData {
   animationSettings: AnimationSettings;
   gameSettings: GameSettings;
   chatbotSettings: ChatbotSettings;
+  soundSettings: SoundSettings;
+  leaderboardSettings: LeaderboardSettings;
 }
 
 /* ------------------------------------------------------------------ *
@@ -328,6 +334,44 @@ export interface GameSettings {
   hidden: MiniGameKind[];
   /** Manual display order. Games missing from here are appended. */
   order: MiniGameKind[];
+}
+
+/**
+ * Admin-controlled sound policy.
+ *
+ * The visitor's own on/off choice is a *per-device* preference stored locally —
+ * it is deliberately not here, because one visitor muting the site should not
+ * change it for anyone else. What an admin controls is whether sound is
+ * permitted at all, what it defaults to, and whether games may be louder.
+ */
+export interface SoundSettings {
+  /** Master switch. When false the nav toggle is hidden and nothing plays. */
+  allowed: boolean;
+  gameSounds: boolean;
+  /** 0-1, applied on a visitor's first visit only. */
+  defaultVolume: number;
+}
+
+/** A score the site owner has curated, rather than one a device recorded. */
+export interface OfficialScore {
+  id: string;
+  game: MiniGameKind;
+  name: string;
+  score: number;
+  date: string;
+}
+
+export interface LeaderboardSettings {
+  enabled: boolean;
+  title: string;
+  /** How many rows to show. Hard-capped by the storage layer regardless. */
+  limit: number;
+  /** Require a name before a score counts. */
+  requireName: boolean;
+  namePlaceholder: string;
+  /** Show the local board alongside, or curated entries only. */
+  showLocal: boolean;
+  officialEntries: OfficialScore[];
 }
 
 export type ChatbotTone = 'professional' | 'friendly';

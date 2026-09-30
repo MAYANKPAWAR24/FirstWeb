@@ -139,7 +139,7 @@ export default function Hero({ profile, hero, visitorCount, availableTargets, on
                 type="button"
                 onClick={() => { sounds.click(); onNavigate(primary.target); }}
                 onMouseEnter={() => sounds.hover()}
-                className="btn btn-primary group"
+                className="btn btn-primary btn-hero group"
               >
                 {primary.label}
                 <ArrowRight
@@ -171,25 +171,21 @@ export default function Hero({ profile, hero, visitorCount, availableTargets, on
         )}
       </div>
 
-      {/* Scroll cue. Purely decorative, and the whole wrapper is hidden from
-          assistive tech rather than announcing "scroll down" to nobody. */}
-      <div className="absolute inset-x-0 bottom-7 flex justify-center" aria-hidden="true">
-        <button
-          type="button"
-          onClick={() => onNavigate(primary?.target ?? 'profile')}
+      {/* Scroll cue.
+          Decorative, so it is a <span> rather than a <button>: the previous
+          version was a focusable control inside an aria-hidden wrapper, which
+          means it did nothing for assistive tech while still looking clickable.
+          The real CTAs above carry the interaction. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-7 hidden justify-center sm:flex" aria-hidden="true">
+        <div
           className={cls(
-            'group hidden h-11 w-9 items-start justify-center rounded-full border border-[var(--line-strong)] pt-2',
-            'transition-colors duration-[--dur-hover] hover:border-[var(--accent)] sm:flex',
+            'flex h-11 w-9 flex-col items-center justify-center gap-0.5 rounded-full border',
+            'border-[var(--line-strong)] pt-2',
           )}
-          tabIndex={-1}
         >
           <span className="block h-1.5 w-1 rounded-full bg-[var(--accent)] motion-safe:animate-scroll-hint" />
-          <ChevronDown
-            size={13}
-            aria-hidden="true"
-            className="mt-1 text-[var(--faint)] transition-transform duration-[--dur-hover] group-hover:translate-y-0.5"
-          />
-        </button>
+          <ChevronDown size={13} aria-hidden="true" className="text-[var(--faint)]" />
+        </div>
       </div>
     </section>
   );

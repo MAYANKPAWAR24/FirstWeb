@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { DataProvider, useData } from '@/lib/DataContext';
 import { ToastProvider } from '@/lib/ToastContext';
-import { sounds, setSoundEnabled, isSoundEnabled } from '@/lib/sound';
+import { sounds, setSoundEnabled, isSoundEnabled, initSoundPreference, setSoundVolume, setGameSoundEnabled } from '@/lib/sound';
 import type { SectionId, SeoSettings } from '@/lib/types';
 import type { PortfolioSearchResult } from '@/lib/search';
 import { SectionRule } from '@/components/Section';
@@ -39,7 +39,9 @@ function AppContent() {
   } = useData();
 
   const [adminOpen, setAdminOpen] = useState(false);
-  const [soundOn, setSoundOn] = useState(isSoundEnabled());
+  // The persisted preference is read during the first render so the nav toggle
+  // never flashes the wrong state on load.
+  const [soundOn, setSoundOn] = useState(() => initSoundPreference());
   const [activeSection, setActiveSection] = useState<SectionId>('home');
   const [searchSelection, setSearchSelection] = useState<PortfolioSearchResult | null>(null);
 
@@ -98,7 +100,9 @@ function AppContent() {
         onSubmit={(entry) => addGuestbookEntry({ ...entry, date: new Date().toISOString(), avatar: entry.name.charAt(0).toUpperCase() })}
       />
     ),
-    games: () => <GamesSection settings={data.gameSettings} />,
+    games: () => (
+      <GamesSection settings={data.gameSettings} leaderboard={data.leaderboardSettings} />
+    ),
   };
 
   /* ---- Motion configuration ---------------------------------------- *
@@ -114,6 +118,24 @@ function AppContent() {
     document.documentElement.dataset.ambient = String(animationSettings.ambientEffects);
     document.documentElement.dataset.cursor = String(animationSettings.cursorEffects);
   }, [animationSettings]);
+
+  /* ---- Sound policy ------------------------------------------------
+   * The admin controls whether sound is permitted at all, what a first-time
+   * visitor hears, and whether games may be richer. The visitor's own on/off
+   * choice is local and was already restored during the first render, so
+   * changing the admin policy here must not clobber it.
+   *                                                               */
+  useEffect(() => {
+    const { allowed, gameSounds, defaultVolume } = data.soundSettings;
+    setGameSoundEnabled(gameSounds);
+    setSoundVolume(defaultVolume);
+    // Turning the policy off always mutes. Turning it back on does *not*
+    // unmute: that would override a visitor who deliberately muted.
+    if (!allowed && isSoundEnabled()) {
+      setSoundEnabled(false);
+      setSoundOn(false);
+    }
+  }, [data.soundSettings]);
 
   /* ---- Document head ------------------------------------------------
    * The static <head> in index.html is a fallback. Everything an admin
@@ -205,6 +227,7 @@ function AppContent() {
 
   return (
     <div className="site-shell">
+      <div className="site-drift ambient-only" aria-hidden="true" />
       <div className="site-bg" aria-hidden="true" />
       <div className="site-grid ambient-only" aria-hidden="true" />
       <div className="site-grain ambient-only" aria-hidden="true" />
@@ -219,6 +242,7 @@ function AppContent() {
         onSearchSelect={handleSearchSelect}
         activeSection={activeSection}
         soundOn={soundOn}
+        soundAllowed={data.soundSettings.allowed}
         onToggleSound={toggleSound}
       />
 

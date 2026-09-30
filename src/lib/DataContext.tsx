@@ -3,6 +3,7 @@ import type {
   PortfolioData, Poem, MediaItem, StudyMaterial, Achievement, Certificate, GuestbookEntry, Profile,
   CustomSection, ChatbotFAQ, HeroSettings, SkillGroups, PortfolioBlock, PortfolioSettings,
   ContactSettings, FooterSettings, SeoSettings, AnimationSettings, GameSettings, ChatbotSettings,
+  SoundSettings, LeaderboardSettings,
 } from './types';
 import { seedData } from './seedData';
 import { uid } from './utils';
@@ -14,6 +15,8 @@ import {
   normalizeCustomSections,
   normalizeFooterSettings,
   normalizeGameSettings,
+  normalizeSoundSettings,
+  normalizeLeaderboardSettings,
   normalizeHeroSettings,
   normalizePortfolioBlocks,
   normalizePortfolioSettings,
@@ -78,6 +81,8 @@ const SETTINGS_KEYS = [
   'animationSettings',
   'gameSettings',
   'chatbotSettings',
+  'soundSettings',
+  'leaderboardSettings',
 ] as const;
 
 type SettingsKey = (typeof SETTINGS_KEYS)[number];
@@ -88,6 +93,7 @@ const RESETTABLE_KEYS = [
   'contactSettings', 'footerSettings', 'seoSettings', 'animationSettings',
   'gameSettings', 'chatbotSettings', 'poems', 'media', 'studyMaterials',
   'achievements', 'certificates', 'guestbook', 'chatbotFAQs', 'customSections',
+  'soundSettings', 'leaderboardSettings',
 ] as const;
 
 function normalizeContentTypes(data: PortfolioData): PortfolioData {
@@ -136,6 +142,8 @@ function normalizeData(input: Partial<PortfolioData> | null | undefined): Portfo
     seoSettings: normalizeSeoSettings(source.seoSettings, seedData.seoSettings) ?? seedData.seoSettings,
     animationSettings: normalizeAnimationSettings(source.animationSettings, seedData.animationSettings) ?? seedData.animationSettings,
     gameSettings: normalizeGameSettings(source.gameSettings, seedData.gameSettings) ?? seedData.gameSettings,
+    soundSettings: normalizeSoundSettings(source.soundSettings, seedData.soundSettings) ?? seedData.soundSettings,
+    leaderboardSettings: normalizeLeaderboardSettings(source.leaderboardSettings, seedData.leaderboardSettings) ?? seedData.leaderboardSettings,
     chatbotSettings: normalizeChatbotSettings(source.chatbotSettings, seedData.chatbotSettings) ?? seedData.chatbotSettings,
   });
 }
@@ -209,6 +217,8 @@ interface DataContextValue {
   setAnimationSettings: (settings: AnimationSettings) => void;
   setGameSettings: (settings: GameSettings) => void;
   setChatbotSettings: (settings: ChatbotSettings) => void;
+  setSoundSettings: (settings: SoundSettings) => void;
+  setLeaderboardSettings: (settings: LeaderboardSettings) => void;
   // Admin password
   setAdminPassword: (pw: string) => Promise<void>;
   // Drafts
@@ -767,6 +777,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setData((d) => ({ ...d, chatbotSettings: normalizeChatbotSettings(settings, seedData.chatbotSettings) ?? settings }));
   }, []);
 
+  const setSoundSettings = useCallback((settings: SoundSettings) => {
+    setData((d) => ({ ...d, soundSettings: normalizeSoundSettings(settings, seedData.soundSettings) ?? settings }));
+  }, []);
+
+  const setLeaderboardSettings = useCallback((settings: LeaderboardSettings) => {
+    setData((d) => ({
+      ...d,
+      leaderboardSettings: normalizeLeaderboardSettings(settings, seedData.leaderboardSettings) ?? settings,
+    }));
+  }, []);
+
   const setAdminPassword = useCallback(async (pw: string) => {
     await changeCloudAdminPassword(pw);
   }, []);
@@ -807,6 +828,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setHeroSettings, setSkillGroups, setPortfolioSettings,
     addPortfolioBlock, updatePortfolioBlock, deletePortfolioBlock, movePortfolioBlock, duplicatePortfolioBlock,
     setContactSettings, setFooterSettings, setSeoSettings, setAnimationSettings, setGameSettings, setChatbotSettings,
+    setSoundSettings, setLeaderboardSettings,
     setAdminPassword, saveDraft, loadDraft, clearDraft,
   };
 

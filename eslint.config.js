@@ -7,7 +7,7 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   // `.kilo/worktrees` holds parallel checkouts of this same repo, so linting
   // them reports every finding twice and never reports the tree being worked on.
-  { ignores: ['dist', '.kilo', 'node_modules'] },
+  { ignores: ['dist', '.kilo', 'node_modules', '.verify', '.audit', '.score'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

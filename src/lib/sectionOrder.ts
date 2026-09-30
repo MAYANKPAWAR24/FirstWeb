@@ -27,17 +27,17 @@ export const SECTION_VISIBILITY_KEY = 'portfolio_section_visibility_v1';
 const LEGACY_SECTION_ORDER_KEY = 'portfolio_section_order_v1';
 const LEGACY_SECTION_ORDER_KEY_V2 = 'portfolio_section_order_v2';
 
-export const PUBLIC_SECTIONS: { id: PublicSectionId; label: string; nav: boolean }[] = [
-  { id: 'profile', label: 'About', nav: true },
-  { id: 'portfolio', label: 'Portfolio', nav: true },
-  { id: 'literature', label: 'Literature', nav: true },
-  { id: 'media', label: 'Media', nav: true },
-  { id: 'study', label: 'Study Material', nav: false },
-  { id: 'achievements', label: 'Achievements', nav: false },
-  { id: 'certificates', label: 'Certificates', nav: false },
-  { id: 'contact', label: 'Contact', nav: true },
-  { id: 'community', label: 'Community', nav: false },
-  { id: 'games', label: 'Play Break', nav: false },
+export const PUBLIC_SECTIONS: { id: PublicSectionId; label: string }[] = [
+  { id: 'profile', label: 'About' },
+  { id: 'portfolio', label: 'Portfolio' },
+  { id: 'literature', label: 'Literature' },
+  { id: 'media', label: 'Media' },
+  { id: 'study', label: 'Study Material' },
+  { id: 'achievements', label: 'Achievements' },
+  { id: 'certificates', label: 'Certificates' },
+  { id: 'contact', label: 'Contact' },
+  { id: 'community', label: 'Community' },
+  { id: 'games', label: 'Play Break' },
 ];
 
 export const DEFAULT_SECTION_ORDER: PublicSectionId[] = PUBLIC_SECTIONS.map(({ id }) => id);

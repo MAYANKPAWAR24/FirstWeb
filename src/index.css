@@ -172,6 +172,60 @@ body.scroll-locked {
 
 @media (max-width: 767px) { .site-grid { display: none; } }
 
+/**
+ * Two very slow drifting accent fields behind the content.
+ *
+ * Painted on the fixed background layer with transform-only animation, so the
+ * whole thing stays one composited layer and never triggers layout. The
+ * durations are long enough (26s/34s) that the drift reads as atmosphere
+ * rather than movement. Both are dropped on coarse pointers, where a
+ * full-viewport animated gradient is the single most expensive thing on the
+ * page and the least noticed.
+ */
+.site-drift {
+  position: fixed;
+  inset: -20%;
+  z-index: -2;
+  pointer-events: none;
+  opacity: 0.75;
+  will-change: transform;
+}
+.site-drift::before,
+.site-drift::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+}
+.site-drift::before {
+  width: 46rem;
+  height: 46rem;
+  top: 8%;
+  left: 6%;
+  background: radial-gradient(circle, rgba(10, 130, 189, 0.14), transparent 68%);
+  animation: drift-a 34s var(--ease-in-out-quart) infinite alternate;
+}
+.site-drift::after {
+  width: 40rem;
+  height: 40rem;
+  bottom: 4%;
+  right: 8%;
+  background: radial-gradient(circle, rgba(97, 70, 223, 0.12), transparent 68%);
+  animation: drift-b 26s var(--ease-in-out-quart) infinite alternate;
+}
+@keyframes drift-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(6%, 4%, 0) scale(1.12); }
+}
+@keyframes drift-b {
+  from { transform: translate3d(0, 0, 0) scale(1.08); }
+  to   { transform: translate3d(-5%, -5%, 0) scale(1); }
+}
+
+@media (max-width: 1023px), (hover: none), (pointer: coarse) {
+  .site-drift { display: none; }
+}
+
 /* ==================================================================
    SECTION RHYTHM
    ================================================================== */
@@ -207,6 +261,31 @@ body.scroll-locked {
   background: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-soft);
   flex: none;
+}
+
+/**
+ * A slow travelling highlight along the divider, so section breaks feel
+ * connected rather than merely separated. Transform-only, and long enough that
+ * it reads as a slow sweep rather than a blink.
+ */
+.section-rule::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(10, 130, 189, 0.55), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: rule-sweep 9s var(--ease-in-out-quart) infinite;
+}
+.section-rule { position: relative; overflow: hidden; }
+@keyframes rule-sweep {
+  0%       { background-position: -45% 0; opacity: 0; }
+  35%, 65% { opacity: 1; }
+  100%     { background-position: 105% 0; opacity: 0; }
 }
 
 .shell {
@@ -450,6 +529,24 @@ body.scroll-locked {
 .btn-primary:hover::before { transform: translate3d(100%, 0, 0); }
 .btn-primary:hover { box-shadow: 0 2px 4px rgba(12, 12, 17, 0.1), 0 18px 38px -14px rgba(12, 79, 126, 0.7); }
 
+/**
+ * The single hero CTA breathes. Deliberately applied to one button rather than
+ * every primary: a site where all of them pulse reads as an alarm, not a
+ * premium accent.
+ *
+ * The pulse animates box-shadow only — never transform or opacity on the
+ * element itself — so it cannot shift layout or fight the press animation. The
+ * global reduced-motion rule collapses the duration to nothing.
+ */
+.btn-hero {
+  animation: btn-breathe 4.8s var(--ease-in-out-quart) infinite;
+}
+@keyframes btn-breathe {
+  0%, 100% { box-shadow: 0 1px 2px rgba(12, 12, 17, 0.08), 0 12px 28px -14px rgba(12, 79, 126, 0.55); }
+  50%      { box-shadow: 0 1px 2px rgba(12, 12, 17, 0.08), 0 12px 28px -12px rgba(12, 79, 126, 0.7), 0 0 0 4px rgba(10, 130, 189, 0.08); }
+}
+.btn-hero:hover { animation-play-state: paused; }
+
 .btn-secondary {
   color: var(--ink);
   background: var(--surface);
@@ -487,6 +584,12 @@ body.scroll-locked {
   border-color: rgba(10, 130, 189, 0.36);
   box-shadow: 0 8px 20px -10px rgba(10, 130, 189, 0.42);
 }
+.btn-icon:active { transform: translate3d(0, 1px, 0) scale(0.94); }
+.btn-icon[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: rgba(10, 130, 189, 0.28);
+}
 
 .chip {
   display: inline-flex;
@@ -501,6 +604,8 @@ body.scroll-locked {
   border: 1px solid var(--line);
   transition: all var(--dur-hover) var(--ease-out-expo);
 }
+.chip:hover { border-color: var(--line-strong); background: rgba(16, 18, 25, 0.05); }
+.chip:active { transform: translate3d(0, 1px, 0); }
 .chip-accent {
   color: var(--accent);
   background: var(--accent-soft);
@@ -527,8 +632,9 @@ body.scroll-locked {
   color: #ffffff;
   background: var(--ink);
   border-color: var(--ink);
-  box-shadow: 0 6px 18px -10px rgba(16, 18, 25, 0.7);
+  box-shadow: 0 6px 18px -10px rgba(16, 18, 25, 0.7), 0 0 0 3px rgba(10, 130, 189, 0.12);
 }
+.filter-pill[aria-pressed='true']:hover { background: var(--ink-2); }
 
 .field {
   width: 100%;
@@ -791,6 +897,46 @@ textarea.field { min-height: 7rem; resize: vertical; line-height: 1.6; }
    `position: fixed` descendant, so this class must never land on a
    page-level wrapper or a `<section>`.
    ================================================================== */
+/* ==================================================================
+   CARD ACTIONS
+
+   A <button> may only contain phrasing content, so a whole card cannot
+   legally be a button — nesting the card's <div>s, heading and paragraph
+   inside one is invalid HTML even though every browser renders it.
+
+   The accessible pattern is a real control placed in the card's heading,
+   with a transparent overlay that makes the rest of the card clickable.
+   The control stays in the tab order and keeps its own accessible name;
+   the overlay is pure decoration.
+
+   `:hover` on the card still works because the overlay is its descendant,
+   and `:focus-within` carries the focus state, so no `:has()` is needed.
+   ================================================================== */
+.card-action {
+  text-align: inherit;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+/* The stretched hit area. `z-index` lifts it above the card's own content so a
+   click anywhere lands on the control, while the text stays selectable. */
+.card-action::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+.card-action:focus-visible { outline: none; }
+.card:focus-within {
+  border-color: rgba(10, 130, 189, 0.3);
+  box-shadow: 0 2px 4px rgba(12, 12, 17, 0.05), 0 18px 44px -20px rgba(12, 12, 17, 0.22);
+}
+@media (hover: hover) and (pointer: fine) {
+  .card:focus-within { transform: translate3d(0, -3px, 0); }
+}
+
 .gpu-accelerated {
   transform: translate3d(0, 0, 0);
   -webkit-backface-visibility: hidden;

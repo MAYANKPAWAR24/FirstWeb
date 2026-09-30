@@ -398,7 +398,33 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
     enabled: true,
     featured: 'tic-tac-toe',
     hidden: [],
-    order: ['tic-tac-toe', 'memory', 'twenty-forty-eight', 'snake', 'rock-paper-scissors', 'reaction'],
+    order: [
+      'tic-tac-toe', 'memory', 'twenty-forty-eight', 'snake',
+      'word-forge', 'math-sprint', 'rock-paper-scissors', 'reaction',
+    ],
+  },
+
+  /**
+   * Sound is *allowed* by default but a visitor still opts in before hearing
+   * anything — see `initSoundPreference`. Only games get a slightly richer
+   * palette; interface audio stays quiet and neutral.
+   */
+  soundSettings: {
+    allowed: true,
+    gameSounds: true,
+    defaultVolume: 0.5,
+  },
+
+  leaderboardSettings: {
+    enabled: true,
+    title: 'Top Scores',
+    limit: 5,
+    requireName: false,
+    namePlaceholder: 'Your name',
+    showLocal: true,
+    // Curated by the site owner. Empty by default so nothing implies a score
+    // that was never actually achieved.
+    officialEntries: [],
   },
 
   chatbotSettings: {

@@ -1,5 +1,5 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
-import { Brain, Gamepad2, Gauge, Grid3x3, Swords, Zap } from 'lucide-react';
+import { Brain, Calculator, Feather, Gamepad2, Gauge, Grid3x3, Swords, Zap } from 'lucide-react';
 import type { MiniGameKind } from '@/lib/types';
 
 /**
@@ -12,6 +12,11 @@ import type { MiniGameKind } from '@/lib/types';
  *
  * Everything now derives from this record: the admin manager, the Play Break
  * section, and the Section Builder's game preview.
+ *
+ * Note the id format differs per game (`twenty-forty-eight`, `word-forge`) while
+ * the old identifiers (`tic-tac-toe`, `snake`) are kept byte-for-byte. Those two
+ * are stored in existing records and must never change or saved custom sections
+ * would stop rendering.
  */
 
 export interface GameProps {
@@ -94,6 +99,26 @@ export const GAME_REGISTRY: Record<MiniGameKind, GameDefinition> = {
     heightClass: 'h-[18rem]',
     load: () => import('./ReactionTap'),
   },
+  'word-forge': {
+    id: 'word-forge',
+    title: 'Word Forge',
+    blurb: 'Guess the hidden word before the six guesses run out.',
+    tag: 'Word',
+    icon: Feather,
+    tags: ['Vocabulary', 'Solo'],
+    heightClass: 'h-[26rem]',
+    load: () => import('./WordForge'),
+  },
+  'math-sprint': {
+    id: 'math-sprint',
+    title: 'Math Sprint',
+    blurb: 'Thirty seconds. As many correct answers as you can.',
+    tag: 'Speed',
+    icon: Calculator,
+    tags: ['Numbers', 'Timed'],
+    heightClass: 'h-[24rem]',
+    load: () => import('./MathSprint'),
+  },
 };
 
 /** Registry order, used as the fallback when an admin saves no explicit order. */
@@ -102,6 +127,8 @@ export const DEFAULT_GAME_ORDER: MiniGameKind[] = [
   'memory',
   'twenty-forty-eight',
   'snake',
+  'word-forge',
+  'math-sprint',
   'rock-paper-scissors',
   'reaction',
 ];

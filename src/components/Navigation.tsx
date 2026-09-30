@@ -6,6 +6,7 @@ import { searchPortfolio, type PortfolioSearchResult } from '@/lib/search';
 import Overlay from '@/components/Overlay';
 import { useEscapeKey, useFocusTrap } from '@/hooks/useFocusTrap';
 import { PUBLIC_SECTIONS, isBlockHidden, type PublicSectionId } from '@/lib/sectionOrder';
+import { sectionHasContent } from '@/lib/sectionContent';
 import type { SectionId } from '@/lib/types';
 import { cls } from '@/lib/utils';
 
@@ -14,6 +15,8 @@ interface NavProps {
   onSearchSelect: (result: PortfolioSearchResult) => void;
   activeSection: SectionId;
   soundOn: boolean;
+  /** False when the admin has disallowed sound site-wide; hides the toggle. */
+  soundAllowed: boolean;
   onToggleSound: () => void;
 }
 
@@ -25,7 +28,7 @@ interface NavProps {
  * crawlable internal links at all, which is one of the reasons search engines
  * reported "very few links" and could not follow the page structure.
  */
-export default function Navigation({ onNavigate, onSearchSelect, activeSection, soundOn, onToggleSound }: NavProps) {
+export default function Navigation({ onNavigate, onSearchSelect, activeSection, soundOn, soundAllowed, onToggleSound }: NavProps) {
   const { data, sectionVisibility, sectionOrder } = useData();
   const [scrolled, setScrolled] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -43,8 +46,12 @@ export default function Navigation({ onNavigate, onSearchSelect, activeSection, 
     const labels = new Map(PUBLIC_SECTIONS.map((entry) => [entry.id as PublicSectionId, entry]));
     return ordered
       .map((id) => ({ id: id as SectionId, label: labels.get(id as PublicSectionId)?.label ?? id }))
-      .filter((entry) => !isBlockHidden(sectionVisibility, entry.id));
-  }, [sectionOrder, sectionVisibility]);
+      // Visibility alone is not enough. Certificates with no entries, and Play
+      // Break with everything disabled, render nothing — linking to them scrolls
+      // nowhere. Both the nav and the section renderer ask `sectionHasContent`.
+      .filter((entry) => !isBlockHidden(sectionVisibility, entry.id))
+      .filter((entry) => sectionHasContent(entry.id, data));
+  }, [sectionOrder, sectionVisibility, data]);
 
   // Seven is the most that stays legible above the search field on a laptop;
   // anything beyond that collapses into a labelled overflow menu rather than
@@ -249,16 +256,18 @@ export default function Navigation({ onNavigate, onSearchSelect, activeSection, 
             </div>
 
             <div className="flex flex-none items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => { sounds.click(); onToggleSound(); }}
-                aria-pressed={soundOn}
-                title={soundOn ? 'Mute interface sounds' : 'Enable interface sounds'}
-                className="btn-icon h-9 w-9 min-h-0"
-              >
-                {soundOn ? <Volume2 size={15} aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}
-                <span className="sr-only">{soundOn ? 'Mute interface sounds' : 'Enable interface sounds'}</span>
-              </button>
+              {soundAllowed && (
+                <button
+                  type="button"
+                  onClick={() => { sounds.click(); onToggleSound(); }}
+                  aria-pressed={soundOn}
+                  title={soundOn ? 'Mute sounds' : 'Enable sounds'}
+                  className="btn-icon h-9 w-9 min-h-0"
+                >
+                  {soundOn ? <Volume2 size={15} aria-hidden="true" /> : <VolumeX size={15} aria-hidden="true" />}
+                  <span className="sr-only">{soundOn ? 'Mute sounds' : 'Enable sounds'}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => { sounds.click(); setDrawerOpen(true); }}

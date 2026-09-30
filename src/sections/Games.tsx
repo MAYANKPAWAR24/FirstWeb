@@ -1,21 +1,29 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Section from '@/components/Section';
 import Reveal from '@/components/Reveal';
-import { sounds } from '@/lib/sound';
+import Leaderboard from '@/components/games/Leaderboard';
+import { sounds, reportScore } from '@/lib/sound';
 import {
   GAME_REGISTRY, lazyGame, resolveGame,
   type GameDefinition,
 } from '@/components/games/registry';
-import type { GameSettings, MiniGameKind } from '@/lib/types';
+import type { GameSettings, LeaderboardSettings, MiniGameKind } from '@/lib/types';
 
 interface GamesSectionProps {
   settings: GameSettings;
+  leaderboard: LeaderboardSettings;
 }
 
-type Active = { kind: MiniGameKind; key: number };
+interface RoundResult {
+  game: MiniGameKind;
+  score: number;
+  /** Monotonic so two identical scores still trigger a fresh board read. */
+  nonce: number;
+}
 
-export default function GamesSection({ settings }: GamesSectionProps) {
-  const [active, setActive] = useState<Active | null>(null);
+export default function GamesSection({ settings, leaderboard }: GamesSectionProps) {
+  const [active, setActive] = useState<{ kind: MiniGameKind; key: number } | null>(null);
+  const [result, setResult] = useState<RoundResult | null>(null);
   const sectionRef = useRef<HTMLDivElement>(null);
 
   const games = useMemo(() => {
@@ -48,20 +56,32 @@ export default function GamesSection({ settings }: GamesSectionProps) {
     return () => observer.disconnect();
   }, [games]);
 
+  // The game reports a score without knowing which game it is; the section
+  // stamps whichever one is currently open onto the result.
+  const activeRef = useRef(active);
+  activeRef.current = active;
+
+  const handleScored = useCallback((score: number) => {
+    const game = activeRef.current?.kind;
+    if (!game) return;
+    setResult((current) => ({ game, score, nonce: (current?.nonce ?? 0) + 1 }));
+  }, []);
+
   if (!settings.enabled || games.length === 0) return null;
 
-  const isOpen = active?.kind === featured.id;
+  const current = active?.kind ?? featured.id;
+  const currentGame = resolveGame(current);
+  const otherGames = games.filter((game) => game.id !== current);
 
   return (
     <Section
       id="games"
       eyebrow="Play Break"
       title="Interactive Corner"
-      lede="A short set of small games, built to be picked up in a minute. Nothing to install, nothing tracked."
+      lede="A short set of small games, built to be picked up in a minute. Nothing to install, nothing uploaded."
     >
-      {/* Featured game gets a playable panel; the rest are a collection. */}
       <Reveal className="mb-6">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Choose a game">
           {games.map((game) => {
             const Icon = game.icon;
             const selected = active?.kind === game.id;
@@ -82,23 +102,21 @@ export default function GamesSection({ settings }: GamesSectionProps) {
         </div>
       </Reveal>
 
-      <div ref={sectionRef} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <div>
+      <div ref={sectionRef} className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
           <Reveal from="left">
             <div className="flex items-center gap-3 rounded-panel border border-[var(--line)] bg-[var(--surface-2)] px-4 py-3">
               <span
                 aria-hidden="true"
                 className="grid h-9 w-9 flex-none place-items-center rounded-card bg-[var(--accent-soft)] text-[var(--accent)]"
               >
-                {(() => { const Icon = resolveGame(active?.kind ?? settings.featured).icon; return <Icon size={17} />; })()}
+                {(() => { const Icon = currentGame.icon; return <Icon size={17} />; })()}
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="font-display text-sm font-bold tracking-tight text-[var(--ink)]">
-                  {resolveGame(active?.kind ?? settings.featured).title}
+                  {currentGame.title}
                 </p>
-                <p className="text-xs text-[var(--muted)]">
-                  {resolveGame(active?.kind ?? settings.featured).blurb}
-                </p>
+                <p className="text-xs leading-snug text-[var(--muted)]">{currentGame.blurb}</p>
               </div>
               {active && (
                 <button
@@ -114,18 +132,30 @@ export default function GamesSection({ settings }: GamesSectionProps) {
 
           <div className="mt-4">
             {active ? (
-              <Suspense key={active.key} fallback={<GameSkeleton definition={resolveGame(active.kind)} />}>
-                <ActiveGame kind={active.kind} />
+              <Suspense key={active.key} fallback={<GameSkeleton definition={currentGame} />}>
+                <ActiveGame kind={active.kind} onScore={handleScored} />
               </Suspense>
             ) : (
-              <GameSkeleton definition={isOpen ? featured : featured} idle />
+              <GameSkeleton definition={featured} idle />
             )}
           </div>
+
+          {leaderboard.enabled && (
+            <Reveal className="mt-4">
+              <Leaderboard
+                game={current}
+                gameTitle={currentGame.title}
+                settings={leaderboard}
+                refreshKey={result?.game === current ? result.nonce : 0}
+                latestScore={result?.game === current ? result.score : 0}
+              />
+            </Reveal>
+          )}
         </div>
 
         <Reveal from="right">
           <ul className="space-y-2">
-            {games.filter((game) => game.id !== (active?.kind ?? featured.id)).map((game) => (
+            {otherGames.map((game) => (
               <li key={game.id}>
                 <GameCard game={game} onPlay={() => { sounds.click(); setActive({ kind: game.id, key: Date.now() }); }} />
               </li>
@@ -170,7 +200,7 @@ function GameCard({ game, onPlay }: { game: GameDefinition; onPlay: () => void }
 
 /**
  * Skeleton sized from the registry's declared board height, so the lazy chunk
- * resolving does not shift the layout by ~140px.
+ * resolving does not shift the layout.
  */
 function GameSkeleton({ definition, idle }: { definition: GameDefinition; idle?: boolean }) {
   return (
@@ -178,7 +208,7 @@ function GameSkeleton({ definition, idle }: { definition: GameDefinition; idle?:
       {idle ? (
         <div className="max-w-sm text-center">
           <p className="font-display text-base font-bold tracking-tight text-[var(--ink)]">
-            Pick a game above
+            Pick a game to play
           </p>
           <p className="mt-1.5 text-[13px] leading-relaxed text-[var(--muted)]">
             Each one is a small, self-contained challenge. They load on demand and
@@ -197,11 +227,13 @@ function GameSkeleton({ definition, idle }: { definition: GameDefinition; idle?:
   );
 }
 
-function ActiveGame({ kind }: { kind: MiniGameKind }) {
+function ActiveGame({ kind, onScore }: { kind: MiniGameKind; onScore: (score: number) => void }) {
   const Game = lazyGame(kind);
+  // `reportScore` clamps and rounds once, centrally, so no game has to.
+  const handle = useCallback((score: number) => reportScore(onScore, score), [onScore]);
   return (
     <div className="flex justify-center">
-      <Game />
+      <Game onScore={handle} />
     </div>
   );
 }
