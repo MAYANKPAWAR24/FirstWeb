@@ -1,110 +1,105 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import type {
   PortfolioData, Poem, MediaItem, StudyMaterial, Achievement, Certificate, GuestbookEntry, Profile,
-  CustomSection, ChatbotFAQ, CustomSectionType, MiniGameKind,
+  CustomSection, ChatbotFAQ, HeroSettings, SkillGroups, PortfolioBlock, PortfolioSettings,
+  ContactSettings, FooterSettings, SeoSettings, AnimationSettings, GameSettings, ChatbotSettings,
 } from './types';
-import { CUSTOM_SECTION_TYPES, MINI_GAME_KINDS } from './types';
 import { seedData } from './seedData';
 import { uid } from './utils';
+import {
+  normalizeAnimationSettings,
+  normalizeChatbotFAQs,
+  normalizeChatbotSettings,
+  normalizeContactSettings,
+  normalizeCustomSections,
+  normalizeFooterSettings,
+  normalizeGameSettings,
+  normalizeHeroSettings,
+  normalizePortfolioBlocks,
+  normalizePortfolioSettings,
+  normalizeSeoSettings,
+  normalizeSkillGroups,
+  isRecord,
+  asString,
+  asArray,
+} from './normalize';
 import {
   addCloudGuestbookEntry,
   changeCloudAdminPassword,
   fetchCloudSnapshot,
+  importCloudBackup,
   incrementCloudVisitorCount,
   loginCloudAdmin,
   logoutCloudAdmin,
   saveCloudSnapshot,
 } from './cloudData';
-import { DEFAULT_SECTION_ORDER, loadSectionOrder, saveSectionOrder, loadSectionVisibility, saveSectionVisibility, isSectionVisible, type PublicSectionId, type SectionVisibility, type ToggleableId } from './sectionOrder';
+import {
+  DEFAULT_SECTION_ORDER,
+  loadSectionOrder,
+  saveSectionOrder,
+  loadSectionVisibility,
+  saveSectionVisibility,
+  isSectionVisible,
+  normalizeSectionOrder,
+  type PublicSectionId,
+  type SectionVisibility,
+  type ToggleableId,
+} from './sectionOrder';
 
 const STORAGE_KEY = 'portfolio_data_v1';
 const VISITOR_KEY = 'portfolio_visitor_counted';
 const SOCIAL_LINKS_MIGRATION_KEY = 'portfolio_social_links_v3';
 const POEM_TYPES = new Set(['poem', 'novel', 'article']);
 const MEDIA_TYPES = new Set(['photo', 'video', 'music']);
-
-type UnknownRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function asString(value: unknown, fallback = '') {
-  return typeof value === 'string' ? value : fallback;
-}
-
-function asArray(value: unknown) {
-  return Array.isArray(value) ? value : [];
-}
+/** Idle time before a cloud write is actually sent. */
+const CLOUD_WRITE_DEBOUNCE_MS = 600;
 
 /**
- * Normalizes custom sections coming from the cloud record.
- * Anything malformed is dropped rather than thrown, so a corrupt or older
- * record can never crash the public page.
+ * Every settings key added in Phase 2, in one place.
+ *
+ * The cloud merge loops over this list and applies a single rule:
+ *
+ *   if the snapshot carries the key, the cloud wins;
+ *   if it does not, the client's current value is left untouched.
+ *
+ * That is the whole migration-safety story for new fields. Writing them as
+ * `snapshot.heroSettings ?? seedData.heroSettings` would replace the admin's
+ * saved value with a default every time an older bin was read, which is the
+ * exact data-loss bug the previous generation of keys was written to avoid.
  */
-function normalizeCustomSections(value: unknown): CustomSection[] {
-  return asArray(value)
-    .filter(isRecord)
-    .map((raw): CustomSection | null => {
-      const id = asString(raw.id).trim();
-      const title = asString(raw.title).trim();
-      if (!id || !title) return null;
-      const type = CUSTOM_SECTION_TYPES.includes(raw.type as CustomSectionType) ? raw.type as CustomSectionType : 'text';
-      const game = MINI_GAME_KINDS.includes(raw.game as MiniGameKind) ? raw.game as MiniGameKind : 'tic-tac-toe';
-      return {
-        id,
-        title,
-        type,
-        game,
-        category: asString(raw.category),
-        content: asString(raw.content),
-        mediaUrl: asString(raw.mediaUrl),
-        linkLabel: asString(raw.linkLabel),
-        isVisible: raw.isVisible !== false,
-        createdAt: asString(raw.createdAt) || new Date().toISOString(),
-      };
-    })
-    .filter((section): section is CustomSection => section !== null);
-}
+const SETTINGS_KEYS = [
+  'heroSettings',
+  'skillGroups',
+  'portfolioSettings',
+  'portfolioBlocks',
+  'contactSettings',
+  'footerSettings',
+  'seoSettings',
+  'animationSettings',
+  'gameSettings',
+  'chatbotSettings',
+] as const;
 
-/**
- * Normalizes the admin-managed chatbot knowledge base.
- * Accepts BOTH shapes on purpose: the managed one
- * (`{ id, question, answer, keywords, enabled }`) and the permanent embedded
- * dataset (`{ keywords, response }`) that can be pasted straight into the
- * JSONBin `chatbotFAQs` array. Missing ids/labels are generated, and entries
- * without any usable text are dropped instead of throwing.
- */
-function normalizeChatbotFAQs(value: unknown): ChatbotFAQ[] {
-  return asArray(value)
-    .filter(isRecord)
-    .map((raw, index): ChatbotFAQ | null => {
-      const keywords = asArray(raw.keywords)
-        .filter((keyword): keyword is string => typeof keyword === 'string')
-        .map((keyword) => keyword.trim().toLowerCase())
-        .filter(Boolean);
-      const answer = (typeof raw.answer === 'string' ? raw.answer : typeof raw.response === 'string' ? raw.response : '').trim();
-      if (!answer) return null;
-      const question = asString(raw.question).trim() || keywords[0] || `Answer ${index + 1}`;
-      return {
-        id: asString(raw.id).trim() || uid(),
-        question,
-        answer,
-        keywords,
-        enabled: raw.enabled !== false,
-      };
-    })
-    .filter((faq): faq is ChatbotFAQ => faq !== null);
-}
+type SettingsKey = (typeof SETTINGS_KEYS)[number];
+
+/** Sections that can be reset back to seed without touching the rest. */
+const RESETTABLE_KEYS = [
+  'heroSettings', 'skillGroups', 'portfolioSettings', 'portfolioBlocks',
+  'contactSettings', 'footerSettings', 'seoSettings', 'animationSettings',
+  'gameSettings', 'chatbotSettings', 'poems', 'media', 'studyMaterials',
+  'achievements', 'certificates', 'guestbook', 'chatbotFAQs', 'customSections',
+] as const;
 
 function normalizeContentTypes(data: PortfolioData): PortfolioData {
   return {
     ...data,
-    poems: asArray(data.poems).map((poem) => ({
+    // `asArray` widens to `unknown[]`; the cast re-establishes the element type
+    // that the rest of the app (and this file's normalizers) rely on.
+    poems: (asArray(data.poems) as Poem[]).map((poem) => ({
       ...poem,
       type: POEM_TYPES.has(poem.type) ? poem.type : 'poem',
     })),
-    media: asArray(data.media).map((item) => ({
+    media: (asArray(data.media) as MediaItem[]).map((item) => ({
       ...item,
       type: MEDIA_TYPES.has(item.type) ? item.type : 'photo',
     })),
@@ -113,8 +108,9 @@ function normalizeContentTypes(data: PortfolioData): PortfolioData {
 
 /**
  * Single entry point that turns any (possibly partial, possibly ancient) payload
- * into a complete, render-safe PortfolioData. New keys always fall back to
- * `[]`, so records saved before a feature existed still load cleanly.
+ * into a complete, render-safe PortfolioData. Every Phase 2 key routes through
+ * its normalizer, which returns `undefined` when the key is absent so callers
+ * can distinguish "predates the feature" from "present but empty".
  */
 function normalizeData(input: Partial<PortfolioData> | null | undefined): PortfolioData {
   const source = isRecord(input) ? (input as Partial<PortfolioData>) : {};
@@ -122,15 +118,25 @@ function normalizeData(input: Partial<PortfolioData> | null | undefined): Portfo
     ...seedData,
     ...source,
     profile: { ...seedData.profile, ...(isRecord(source.profile) ? source.profile : {}) },
-    poems: asArray(source.poems ?? seedData.poems),
-    media: asArray(source.media ?? seedData.media),
-    studyMaterials: asArray(source.studyMaterials ?? seedData.studyMaterials),
-    achievements: asArray(source.achievements ?? seedData.achievements),
-    certificates: asArray(source.certificates ?? seedData.certificates),
-    guestbook: asArray(source.guestbook ?? seedData.guestbook),
+    poems: asArray(source.poems ?? seedData.poems) as Poem[],
+    media: asArray(source.media ?? seedData.media) as MediaItem[],
+    studyMaterials: asArray(source.studyMaterials ?? seedData.studyMaterials) as StudyMaterial[],
+    achievements: asArray(source.achievements ?? seedData.achievements) as Achievement[],
+    certificates: asArray(source.certificates ?? seedData.certificates) as Certificate[],
+    guestbook: asArray(source.guestbook ?? seedData.guestbook) as GuestbookEntry[],
     customSections: normalizeCustomSections(source.customSections),
-    chatbotFAQs: source.chatbotFAQs === undefined ? seedData.chatbotFAQs : normalizeChatbotFAQs(source.chatbotFAQs),
+    chatbotFAQs: source.chatbotFAQs === undefined ? seedData.chatbotFAQs : normalizeChatbotFAQs(source.chatbotFAQs) ?? [],
     visitorCount: Number.isFinite(source.visitorCount) ? Number(source.visitorCount) : seedData.visitorCount,
+    heroSettings: normalizeHeroSettings(source.heroSettings, seedData.heroSettings) ?? seedData.heroSettings,
+    skillGroups: normalizeSkillGroups(source.skillGroups, seedData.skillGroups) ?? seedData.skillGroups,
+    portfolioSettings: normalizePortfolioSettings(source.portfolioSettings, seedData.portfolioSettings) ?? seedData.portfolioSettings,
+    portfolioBlocks: normalizePortfolioBlocks(source.portfolioBlocks) ?? seedData.portfolioBlocks,
+    contactSettings: normalizeContactSettings(source.contactSettings, seedData.contactSettings) ?? seedData.contactSettings,
+    footerSettings: normalizeFooterSettings(source.footerSettings, seedData.footerSettings) ?? seedData.footerSettings,
+    seoSettings: normalizeSeoSettings(source.seoSettings, seedData.seoSettings) ?? seedData.seoSettings,
+    animationSettings: normalizeAnimationSettings(source.animationSettings, seedData.animationSettings) ?? seedData.animationSettings,
+    gameSettings: normalizeGameSettings(source.gameSettings, seedData.gameSettings) ?? seedData.gameSettings,
+    chatbotSettings: normalizeChatbotSettings(source.chatbotSettings, seedData.chatbotSettings) ?? seedData.chatbotSettings,
   });
 }
 
@@ -141,11 +147,17 @@ interface DataContextValue {
   isSectionVisible: (id: ToggleableId) => boolean;
   toggleSectionVisible: (id: ToggleableId) => void;
   syncStatus: 'loading' | 'synced' | 'saving' | 'offline' | 'error';
+  /** Wall-clock time of the last successful cloud write, for diagnostics. */
+  lastSyncedAt: number | null;
   isAdmin: boolean;
   loginAdmin: (password: string) => Promise<boolean>;
   logoutAdmin: () => Promise<void>;
   updateSectionOrder: (order: PublicSectionId[]) => void;
   resetData: () => void;
+  /** Resets one section back to its seed without touching anything else. */
+  resetSection: (key: (typeof RESETTABLE_KEYS)[number]) => void;
+  exportBackup: () => Record<string, unknown>;
+  importBackup: (backup: Record<string, unknown>) => Promise<void>;
   updateProfile: (profile: Profile) => void;
   // Poems
   addPoem: (poem: Omit<Poem, 'id'>) => void;
@@ -177,10 +189,26 @@ interface DataContextValue {
   deleteCustomSection: (id: string) => void;
   toggleCustomSectionVisible: (id: string) => void;
   moveCustomSection: (id: string, direction: -1 | 1) => void;
+  duplicateCustomSection: (id: string) => void;
   // Chatbot knowledge base
   addChatbotFAQ: (faq: Omit<ChatbotFAQ, 'id'>) => void;
   updateChatbotFAQ: (id: string, faq: Partial<ChatbotFAQ>) => void;
   deleteChatbotFAQ: (id: string) => void;
+  // Settings (Phase 2)
+  setHeroSettings: (settings: HeroSettings) => void;
+  setSkillGroups: (groups: SkillGroups) => void;
+  setPortfolioSettings: (settings: PortfolioSettings) => void;
+  addPortfolioBlock: (block: Omit<PortfolioBlock, 'id'>) => void;
+  updatePortfolioBlock: (id: string, block: Partial<PortfolioBlock>) => void;
+  deletePortfolioBlock: (id: string) => void;
+  movePortfolioBlock: (id: string, direction: -1 | 1) => void;
+  duplicatePortfolioBlock: (id: string) => void;
+  setContactSettings: (settings: ContactSettings) => void;
+  setFooterSettings: (settings: FooterSettings) => void;
+  setSeoSettings: (settings: SeoSettings) => void;
+  setAnimationSettings: (settings: AnimationSettings) => void;
+  setGameSettings: (settings: GameSettings) => void;
+  setChatbotSettings: (settings: ChatbotSettings) => void;
   // Admin password
   setAdminPassword: (pw: string) => Promise<void>;
   // Drafts
@@ -213,9 +241,8 @@ function loadData(): PortfolioData {
           ...seedData.profile,
           ...savedData.profile,
           socials: seedData.profile.socials.map((defaultSocial) => {
-            const legacyIcon = defaultSocial.icon === 'Twitter' ? 'Twitter' : defaultSocial.icon;
             const existing = savedData.profile?.socials?.find((social) => (
-              social.id === defaultSocial.id || social.icon === legacyIcon || social.label === defaultSocial.label
+              social.id === defaultSocial.id || social.icon === defaultSocial.icon || social.label === defaultSocial.label
             ));
             const addedPlatform = defaultSocial.id === 'threads' || defaultSocial.id === 'telegram';
             if (shouldMigrateSocialLinks && addedPlatform) {
@@ -236,8 +263,11 @@ function loadData(): PortfolioData {
         certificates: parsed.certificates ?? seedData.certificates,
       };
 
+      // One-off rename of the demo identity that shipped in the very first seed.
       if (data.profile.name === 'Aarav Mehta') data.profile.name = 'MAYANK PAWAR';
-      if (data.profile.email === 'aarav.mehta@example.com') data.profile.email = 'mayank.pawar@example.com';
+      if (data.profile.email === 'aarav.mehta@example.com' || data.profile.email === 'mayank.pawar@example.com') {
+        data.profile.email = '';
+      }
       data.poems = data.poems.map((poem) => (
         poem.author === 'Aarav Mehta' ? { ...poem, author: 'MAYANK PAWAR' } : poem
       ));
@@ -263,11 +293,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [sectionVisibility, setSectionVisibility] = useState<SectionVisibility>(loadSectionVisibility);
   const [cloudLoaded, setCloudLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<DataContextValue['syncStatus']>('loading');
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const syncRequestId = useRef(0);
   const pendingGuestbook = useRef<GuestbookEntry[]>([]);
   const submittedDuringLoad = useRef<GuestbookEntry[]>([]);
   const cloudLoadedRef = useRef(false);
+  const writeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestPayload = useRef<{ data: PortfolioData; order: PublicSectionId[]; visibility: SectionVisibility } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -275,17 +308,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .then((snapshot) => {
         if (!active) return;
         const recentEntries = submittedDuringLoad.current;
+
+        // One rule for every Phase 2 key: cloud wins when present, local value
+        // survives when absent. See SETTINGS_KEYS.
+        const cloudSettings: Partial<PortfolioData> = {};
+        SETTINGS_KEYS.forEach((key) => {
+          const incoming = snapshot.data[key];
+          if (incoming !== undefined) cloudSettings[key] = incoming as never;
+        });
+
         setData((current) => normalizeData({
           ...current,
-          ...snapshot.data,
+          ...cloudSettings,
           profile: { ...current.profile, ...snapshot.data.profile },
           poems: snapshot.data.poems ?? current.poems,
           media: snapshot.data.media ?? current.media,
           studyMaterials: snapshot.data.studyMaterials ?? current.studyMaterials,
           achievements: snapshot.data.achievements ?? current.achievements,
           certificates: snapshot.data.certificates ?? current.certificates,
-          // Newer keys: a record written before the feature simply has none of
-          // them, so keep the local (seeded) values instead of blanking them.
           customSections: snapshot.data.customSections ?? current.customSections,
           chatbotFAQs: snapshot.data.chatbotFAQs ?? current.chatbotFAQs,
           guestbook: [
@@ -294,7 +334,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ],
           visitorCount: snapshot.data.visitorCount ?? current.visitorCount,
         }));
-        setSectionOrder(Array.isArray(snapshot.sectionOrder) ? snapshot.sectionOrder : loadSectionOrder());
+        setSectionOrder(
+          normalizeSectionOrder(snapshot.sectionOrder) ?? loadSectionOrder(),
+        );
         submittedDuringLoad.current = [];
         // Only adopt the cloud visibility map when the record actually carries
         // one. A bin created before this feature returns {} and must not wipe
@@ -325,12 +367,48 @@ export function DataProvider({ children }: { children: ReactNode }) {
     saveSectionOrder(sectionOrder);
     saveSectionVisibility(sectionVisibility);
     if (!cloudLoaded || !isAdmin || pendingGuestbook.current.length > 0) return;
+
+    latestPayload.current = { data, order: sectionOrder, visibility: sectionVisibility };
     const requestId = ++syncRequestId.current;
+
+    // Debounced so that typing in a text field does not fire one full-record
+    // PUT per keystroke. The pending payload is flushed on page hide below so
+    // the last edit before a refresh is never dropped.
+    if (writeTimer.current) clearTimeout(writeTimer.current);
     setSyncStatus('saving');
-    saveCloudSnapshot(data, sectionOrder, sectionVisibility)
-      .then(() => { if (requestId === syncRequestId.current) setSyncStatus('synced'); })
-      .catch(() => { if (requestId === syncRequestId.current) setSyncStatus('error'); });
+    writeTimer.current = setTimeout(() => {
+      writeTimer.current = null;
+      saveCloudSnapshot(data, sectionOrder, sectionVisibility)
+        .then(() => {
+          if (requestId !== syncRequestId.current) return;
+          setSyncStatus('synced');
+          setLastSyncedAt(Date.now());
+        })
+        .catch(() => {
+          if (requestId !== syncRequestId.current) return;
+          setSyncStatus('error');
+        });
+    }, CLOUD_WRITE_DEBOUNCE_MS);
   }, [data, sectionOrder, sectionVisibility, cloudLoaded, isAdmin]);
+
+  // A pending debounced write must survive a tab close or a backgrounded page.
+  useEffect(() => {
+    const flush = () => {
+      if (!writeTimer.current) return;
+      clearTimeout(writeTimer.current);
+      writeTimer.current = null;
+      const payload = latestPayload.current;
+      if (!payload || !isAdmin) return;
+      void saveCloudSnapshot(payload.data, payload.order, payload.visibility).catch(() => undefined);
+    };
+    window.addEventListener('pagehide', flush);
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [isAdmin]);
 
   // Increment visitor count once per session
   useEffect(() => {
@@ -348,7 +426,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     try {
       await loginCloudAdmin(password);
       setIsAdmin(true);
-      sessionStorage.setItem('portfolio_admin', 'true');
       return true;
     } catch (error) {
       if (error instanceof Error && error.message === 'Invalid admin password') return false;
@@ -358,12 +435,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const logoutAdmin = useCallback(async () => {
     setIsAdmin(false);
-    sessionStorage.removeItem('portfolio_admin');
     try { await logoutCloudAdmin(); } catch { /* Local logout still succeeds if offline. */ }
   }, []);
 
   const updateSectionOrder = useCallback((order: PublicSectionId[]) => {
-    setSectionOrder(order);
+    setSectionOrder(normalizeSectionOrder(order) ?? [...DEFAULT_SECTION_ORDER]);
   }, []);
 
   const isSectionVisibleStable = useCallback(
@@ -385,6 +461,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setSectionOrder([...DEFAULT_SECTION_ORDER]);
     setSectionVisibility({});
   }, []);
+
+  const resetSection = useCallback((key: (typeof RESETTABLE_KEYS)[number]) => {
+    setData((current) => ({
+      ...current,
+      [key]: seedData[key as keyof PortfolioData],
+    }));
+  }, []);
+
+  const exportBackup = useCallback(
+    () => ({ ...data, sectionOrder, sectionVisibility }),
+    [data, sectionOrder, sectionVisibility],
+  );
+
+  const importBackup = useCallback(async (backup: Record<string, unknown>) => {
+    const { sectionOrder: order, sectionVisibility: visibility, ...content } = backup;
+    setData((current) => normalizeData({ ...current, ...content }));
+    setSectionOrder(normalizeSectionOrder(order) ?? [...DEFAULT_SECTION_ORDER]);
+    if (isRecord(visibility)) setSectionVisibility(visibility as SectionVisibility);
+    if (isAdmin) await importCloudBackup(backup);
+  }, [isAdmin]);
 
   const updateProfile = useCallback((profile: Profile) => {
     setData((d) => ({ ...d, profile }));
@@ -535,6 +631,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const duplicateCustomSection = useCallback((id: string) => {
+    setData((d) => {
+      const source = d.customSections.find((item) => item.id === id);
+      if (!source) return d;
+      const index = d.customSections.findIndex((item) => item.id === id);
+      const copy: CustomSection = {
+        ...source,
+        id: uid(),
+        title: `${source.title} (copy)`.slice(0, 120),
+        createdAt: new Date().toISOString(),
+      };
+      const next = [...d.customSections];
+      next.splice(index + 1, 0, copy);
+      return { ...d, customSections: next };
+    });
+  }, []);
+
   const addChatbotFAQ = useCallback((faq: Omit<ChatbotFAQ, 'id'>) => {
     setData((d) => ({
       ...d,
@@ -546,6 +659,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           question: faq.question.trim(),
           answer: faq.answer.trim(),
           keywords: (faq.keywords ?? []).map((keyword) => keyword.trim()).filter(Boolean),
+          synonyms: (faq.synonyms ?? []).map((synonym) => synonym.trim()).filter(Boolean),
           enabled: faq.enabled !== false,
         },
       ],
@@ -561,6 +675,96 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const deleteChatbotFAQ = useCallback((id: string) => {
     setData((d) => ({ ...d, chatbotFAQs: d.chatbotFAQs.filter((item) => item.id !== id) }));
+  }, []);
+
+  /* ---- Phase 2 settings setters ---- */
+
+  const setHeroSettings = useCallback((settings: HeroSettings) => {
+    setData((d) => ({ ...d, heroSettings: normalizeHeroSettings(settings, seedData.heroSettings) ?? settings }));
+  }, []);
+
+  const setSkillGroups = useCallback((groups: SkillGroups) => {
+    setData((d) => ({ ...d, skillGroups: normalizeSkillGroups(groups, seedData.skillGroups) ?? groups }));
+  }, []);
+
+  const setPortfolioSettings = useCallback((settings: PortfolioSettings) => {
+    setData((d) => ({ ...d, portfolioSettings: normalizePortfolioSettings(settings, seedData.portfolioSettings) ?? settings }));
+  }, []);
+
+  const addPortfolioBlock = useCallback((block: Omit<PortfolioBlock, 'id'>) => {
+    setData((d) => ({
+      ...d,
+      portfolioBlocks: [
+        ...d.portfolioBlocks,
+        {
+          ...block,
+          id: uid(),
+          title: block.title.trim() || 'Untitled block',
+          body: block.body ?? '',
+          tags: (block.tags ?? []).map((tag) => tag.trim()).filter(Boolean),
+          url: (block.url ?? '').trim(),
+          visible: block.visible !== false,
+          featured: block.featured === true,
+          order: Number.isFinite(block.order) ? block.order : d.portfolioBlocks.length,
+        },
+      ],
+    }));
+  }, []);
+
+  const updatePortfolioBlock = useCallback((id: string, block: Partial<PortfolioBlock>) => {
+    setData((d) => ({
+      ...d,
+      portfolioBlocks: d.portfolioBlocks.map((item) => (item.id === id ? { ...item, ...block } : item)),
+    }));
+  }, []);
+
+  const deletePortfolioBlock = useCallback((id: string) => {
+    setData((d) => ({ ...d, portfolioBlocks: d.portfolioBlocks.filter((item) => item.id !== id) }));
+  }, []);
+
+  const movePortfolioBlock = useCallback((id: string, direction: -1 | 1) => {
+    setData((d) => {
+      const sorted = [...d.portfolioBlocks].sort((a, b) => a.order - b.order);
+      const index = sorted.findIndex((item) => item.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= sorted.length) return d;
+      [sorted[index], sorted[target]] = [sorted[target], sorted[index]];
+      // Re-key the whole list so `order` stays a dense 0..n-1 sequence.
+      return { ...d, portfolioBlocks: sorted.map((item, position) => ({ ...item, order: position })) };
+    });
+  }, []);
+
+  const duplicatePortfolioBlock = useCallback((id: string) => {
+    setData((d) => {
+      const source = d.portfolioBlocks.find((item) => item.id === id);
+      if (!source) return d;
+      const copy: PortfolioBlock = { ...source, id: uid(), title: `${source.title} (copy)`.slice(0, 120), featured: false };
+      return { ...d, portfolioBlocks: [...d.portfolioBlocks, copy] };
+    });
+  }, []);
+
+  const setContactSettings = useCallback((settings: ContactSettings) => {
+    setData((d) => ({ ...d, contactSettings: normalizeContactSettings(settings, seedData.contactSettings) ?? settings }));
+  }, []);
+
+  const setFooterSettings = useCallback((settings: FooterSettings) => {
+    setData((d) => ({ ...d, footerSettings: normalizeFooterSettings(settings, seedData.footerSettings) ?? settings }));
+  }, []);
+
+  const setSeoSettings = useCallback((settings: SeoSettings) => {
+    setData((d) => ({ ...d, seoSettings: normalizeSeoSettings(settings, seedData.seoSettings) ?? settings }));
+  }, []);
+
+  const setAnimationSettings = useCallback((settings: AnimationSettings) => {
+    setData((d) => ({ ...d, animationSettings: normalizeAnimationSettings(settings, seedData.animationSettings) ?? settings }));
+  }, []);
+
+  const setGameSettings = useCallback((settings: GameSettings) => {
+    setData((d) => ({ ...d, gameSettings: normalizeGameSettings(settings, seedData.gameSettings) ?? settings }));
+  }, []);
+
+  const setChatbotSettings = useCallback((settings: ChatbotSettings) => {
+    setData((d) => ({ ...d, chatbotSettings: normalizeChatbotSettings(settings, seedData.chatbotSettings) ?? settings }));
   }, []);
 
   const setAdminPassword = useCallback(async (pw: string) => {
@@ -590,17 +794,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const value: DataContextValue = {
     data, sectionOrder, sectionVisibility, isSectionVisible: isSectionVisibleStable, toggleSectionVisible,
-    syncStatus, isAdmin, loginAdmin, logoutAdmin, updateSectionOrder, resetData, updateProfile,
+    syncStatus, lastSyncedAt, isAdmin, loginAdmin, logoutAdmin, updateSectionOrder, resetData, resetSection,
+    exportBackup, importBackup, updateProfile,
     addPoem, updatePoem, deletePoem,
     addMedia, updateMedia, deleteMedia,
     addStudyMaterial, updateStudyMaterial, deleteStudyMaterial,
     addAchievement, updateAchievement, deleteAchievement,
     addCertificate, updateCertificate, deleteCertificate,
     addGuestbookEntry, updateGuestbookEntry, deleteGuestbookEntry,
-    addCustomSection, updateCustomSection, deleteCustomSection, toggleCustomSectionVisible, moveCustomSection,
+    addCustomSection, updateCustomSection, deleteCustomSection, toggleCustomSectionVisible, moveCustomSection, duplicateCustomSection,
     addChatbotFAQ, updateChatbotFAQ, deleteChatbotFAQ,
+    setHeroSettings, setSkillGroups, setPortfolioSettings,
+    addPortfolioBlock, updatePortfolioBlock, deletePortfolioBlock, movePortfolioBlock, duplicatePortfolioBlock,
+    setContactSettings, setFooterSettings, setSeoSettings, setAnimationSettings, setGameSettings, setChatbotSettings,
     setAdminPassword, saveDraft, loadDraft, clearDraft,
   };
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
+
+export type { SettingsKey };
+export { asString, asArray };

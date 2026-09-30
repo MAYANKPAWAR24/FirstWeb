@@ -1,14 +1,29 @@
 import type { PortfolioData } from './types';
 
+/**
+ * Defaults for a first visit with no local record and no reachable cloud.
+ *
+ * Two things are deliberate here:
+ *
+ *  - `profile.email` is empty rather than `example.com`. A reserved,
+ *    non-routable domain shipped as the primary contact reads as broken, and
+ *    the Contact section renders a "set your real email" state instead of a
+ *    link that goes nowhere.
+ *  - `studyMaterials` carry no `url`. The old seed used `url: '#'`, which put
+ *    four dead download links on the public page.
+ *
+ * Everything else is demo content the admin replaces. The admin panel labels
+ * it as such rather than presenting it as verified fact.
+ */
 export const seedData: PortfolioData = {
-  visitorCount: 1247,
+  visitorCount: 0,
   profile: {
     name: 'MAYANK PAWAR',
     title: 'Writer · Developer · Creator',
     tagline: 'Crafting words into worlds, code into art.',
     bio: "I'm MAYANK PAWAR, a writer and software developer who finds beauty at the intersection of literature and technology. My journey spans from penning heartfelt poetry to building elegant digital experiences. I believe every line of code and every verse of poetry shares the same goal: to move people.",
     photo: 'https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&w=600',
-    email: 'mayank.pawar@example.com',
+    email: '',
     location: 'Bengaluru, India',
     skills: [
       'Creative Writing', 'TypeScript', 'React', 'Poetry', 'Storytelling',
@@ -118,11 +133,7 @@ Inside, the air smelled of paper and patience. Shelves rose to the ceiling like 
 
 Mira blinked. "I've never been here before."
 
-The cat's tail flicked. "That's what they all say. The books remember you, even if you don't remember them."
-
-She would later learn that the bookshop lent people the stories they needed — not the ones they wanted. And when she finally left, hours or maybe years later, she carried a book with no title, no author, and only one sentence inside:
-
-"You are not lost. You are a sentence that hasn't found its period yet."`,
+The cat's tail flicked. "That's what they all say. I've seen it a thousand times. The books remember you, even if you don't remember them."`,
     },
     {
       id: 'n2', type: 'novel', title: 'Pixels of Memory', author: 'MAYANK PAWAR',
@@ -134,17 +145,11 @@ Chapter One: The Archive of Good Days
 
 In 2047, memories became the most traded commodity on the planet. You could buy a stranger's perfect summer afternoon for twelve credits. You could sell your grandmother's laugh — if you were the sort of person who would.
 
-Kai worked at a memory archive, the kind of place people visited the way they used to visit libraries. His job was to sort incoming memories, tag them, and file them in the great cloud of human experience. He had seen first kisses, last goodbyes, and the quiet moments in between that people didn't realize were important until they were gone.
+Kai worked at a memory archive, the kind of place people visited the way they used to visit libraries. His job was to sort incoming memories, tag them, and file them in the great cloud of human experience.
 
-Every day, someone walked in carrying a jar — the vessels they used now — and set it on the counter with the careful weight of surrender. "I don't want this one anymore," they'd say. And Kai would take it, hold it up to the light, and watch the memory swirl inside like trapped weather.
+"Today, someone walked in carrying a jar — the vessels they used now — and set it on the counter with the careful weight of surrender. 'I don't want this one anymore,' they'd say."
 
-He never bought one. Not once.
-
-Until the day a woman came in with a jar that glowed a color he had never seen before — not in any archive, not in any catalog. It was the color of something he had forgotten, something his own mind had buried so deep that even the archive's systems couldn't read it.
-
-"That one's not for sale," she said.
-
-"I know," he said. "But I think it's mine."`,
+Until the day a woman came in with a jar that glowed a color he had never seen before — not in any archive, not in any catalog. It was the color of something he had forgotten.`,
     },
   ],
   media: [
@@ -184,25 +189,25 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
       id: 'sm1', title: 'Introduction to Modern Poetry',
       description: 'A comprehensive guide covering free verse, imagery, and contemporary poetic forms.',
       fileType: 'PDF', fileSize: '2.4 MB', date: '2025-09-01',
-      url: '#', tags: ['Poetry', 'Beginner', 'Literature'],
+      url: '', tags: ['Poetry', 'Beginner', 'Literature'],
     },
     {
       id: 'sm2', title: 'React + TypeScript Cheatsheet',
       description: 'Quick reference for hooks, types, patterns, and best practices in React 18.',
       fileType: 'PDF', fileSize: '1.1 MB', date: '2025-08-20',
-      url: '#', tags: ['React', 'TypeScript', 'Frontend'],
+      url: '', tags: ['React', 'TypeScript', 'Frontend'],
     },
     {
       id: 'sm3', title: 'Creative Writing Masterclass Notes',
       description: 'Lecture notes from a 6-week workshop on narrative structure, voice, and editing.',
       fileType: 'DOC', fileSize: '890 KB', date: '2025-07-15',
-      url: '#', tags: ['Writing', 'Workshop', 'Narrative'],
+      url: '', tags: ['Writing', 'Workshop', 'Narrative'],
     },
     {
       id: 'sm4', title: 'Photography Composition Rules',
       description: 'Visual guide to rule of thirds, leading lines, framing, and breaking the rules.',
       fileType: 'PDF', fileSize: '3.7 MB', date: '2025-06-08',
-      url: '#', tags: ['Photography', 'Composition', 'Visual'],
+      url: '', tags: ['Photography', 'Composition', 'Visual'],
     },
   ],
   achievements: [
@@ -257,4 +262,162 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
   // dataset in `chatbot.ts` is the source of truth until the admin edits
   // something; the widget and the engine both fall back to it safely.
   chatbotFAQs: [],
+
+  /* ---- Phase 2 defaults ---- */
+
+  heroSettings: {
+    showGreeting: true,
+    intro: 'Writer and software developer working where literature meets technology. This site is both my portfolio and my reading room — professional work on one side, published writing on the other.',
+    ctas: [
+      { id: 'cta-primary', label: 'View My Work', target: 'portfolio' },
+      { id: 'cta-secondary', label: 'Read My Writing', target: 'literature' },
+      { id: 'cta-tertiary', label: 'Get in Touch', target: 'contact' },
+    ],
+    showStats: true,
+    showVisitorCount: false,
+  },
+
+  skillGroups: {
+    creative: ['Creative Writing', 'Poetry', 'Storytelling', 'Photography', 'UI/UX Design'],
+    technical: ['TypeScript', 'React', 'Node.js', 'Tailwind CSS', 'API Design'],
+    workflow: ['Git', 'Vite', 'Design Systems', 'Technical Writing', 'Testing'],
+    communication: ['Public Speaking', 'Content Strategy', 'Community Building'],
+  },
+
+  portfolioSettings: {
+    eyebrow: 'Portfolio',
+    title: 'Work & Capabilities',
+    intro: 'A snapshot of what I build, how I work, and where I am focused right now.',
+    availabilityStatus: 'Open to collaborations',
+    availabilityNote: 'Available for writing commissions, front-end work, and creative-technical collaborations.',
+    resumeUrl: '',
+    resumeLabel: 'Download Resume',
+  },
+
+  portfolioBlocks: [
+    {
+      id: 'pb-case-study',
+      kind: 'case-study',
+      title: 'This Website',
+      body: 'A single-page personal platform built with React, TypeScript and Vite. It carries a full admin CMS, cloud sync with local fallback, a knowledge-base chatbot, six mini-games and a content model that survives schema changes without losing data.',
+      tags: ['React', 'TypeScript', 'Vite', 'CMS', 'Cloud Sync'],
+      url: '',
+      visible: true,
+      featured: true,
+      order: 0,
+    },
+    {
+      id: 'pb-summary',
+      kind: 'summary',
+      title: 'Professional Summary',
+      body: 'I work across writing and software, and I am most useful in the overlap: explaining complex ideas clearly, and building the tools that carry them. I care about systems that stay maintainable after the first launch.',
+      tags: ['Writing', 'Engineering', 'Systems'],
+      url: '',
+      visible: true,
+      featured: false,
+      order: 1,
+    },
+    {
+      id: 'pb-capability',
+      kind: 'capability',
+      title: 'What I Build',
+      body: 'Editorial and product interfaces, content platforms with real editing workflows, and automation that removes repetitive work. Comfortable owning a feature end to end, from data model to the last hover state.',
+      tags: ['Front-end', 'Content Platforms', 'Automation'],
+      url: '',
+      visible: true,
+      featured: false,
+      order: 2,
+    },
+  ],
+
+  contactSettings: {
+    heading: 'Get in Touch',
+    intro: 'For commissions, collaborations, or a conversation about the work — the fastest route is email.',
+    email: '',
+    phone: '',
+    showForm: true,
+    showSocials: true,
+    ctaLabel: 'Send an Email',
+  },
+
+  footerSettings: {
+    note: 'Built as a living portfolio: every section on this page is editable from the admin panel and syncs to the cloud.',
+    copyright: `© ${new Date().getFullYear()} MAYANK PAWAR. All rights reserved.`,
+    columns: [
+      {
+        id: 'col-explore',
+        heading: 'Explore',
+        links: [
+          { id: 'col-explore-about', label: 'About', section: 'profile', url: '' },
+          { id: 'col-explore-portfolio', label: 'Portfolio', section: 'portfolio', url: '' },
+          { id: 'col-explore-literature', label: 'Literature', section: 'literature', url: '' },
+          { id: 'col-explore-media', label: 'Media', section: 'media', url: '' },
+        ],
+      },
+      {
+        id: 'col-connect',
+        heading: 'Connect',
+        links: [
+          { id: 'col-connect-contact', label: 'Contact', section: 'contact', url: '' },
+          { id: 'col-connect-achievements', label: 'Achievements', section: 'achievements', url: '' },
+          { id: 'col-connect-community', label: 'Community', section: 'community', url: '' },
+          { id: 'col-connect-games', label: 'Play Break', section: 'games', url: '' },
+        ],
+      },
+    ],
+  },
+
+  seoSettings: {
+    title: 'MAYANK PAWAR — Writer, Developer & Creator',
+    description: 'Portfolio and published writing by MAYANK PAWAR — a writer and front-end developer working across literature and technology.',
+    ogImage: '/og-image.png',
+    siteUrl: '',
+    keywords: [
+      'MAYANK PAWAR',
+      'writer portfolio',
+      'poetry',
+      'literary fiction',
+      'front-end developer',
+      'React TypeScript',
+    ],
+    twitterHandle: '',
+    jsonLdEnabled: true,
+    indexable: true,
+  },
+
+  animationSettings: {
+    enabled: true,
+    intensity: 'full',
+    ambientEffects: true,
+    cursorEffects: true,
+    sectionReveal: true,
+    heroParallax: true,
+  },
+
+  gameSettings: {
+    enabled: true,
+    featured: 'tic-tac-toe',
+    hidden: [],
+    order: ['tic-tac-toe', 'memory', 'twenty-forty-eight', 'snake', 'rock-paper-scissors', 'reaction'],
+  },
+
+  chatbotSettings: {
+    enabled: true,
+    name: 'Site Assistant',
+    greeting: "Hi — I'm the assistant for this site. Ask me about Mayank's work, writing, skills, or how to get in touch.",
+    tone: 'professional',
+    quickReplies: [
+      { id: 'qr-portfolio', label: 'View portfolio', query: 'Take me to the portfolio' },
+      { id: 'qr-writing', label: 'Read the writing', query: 'Where can I read the writing' },
+      { id: 'qr-contact', label: 'How to contact', query: 'How can I contact Mayank' },
+      { id: 'qr-skills', label: 'Skills & tools', query: 'What are his skills' },
+    ],
+    sectionChips: [
+      { id: 'sc-portfolio', label: 'Portfolio', target: 'portfolio' },
+      { id: 'sc-literature', label: 'Literature', target: 'literature' },
+      { id: 'sc-achievements', label: 'Achievements', target: 'achievements' },
+      { id: 'sc-contact', label: 'Contact', target: 'contact' },
+    ],
+    fallbackStyle: 'helpful',
+  },
 };

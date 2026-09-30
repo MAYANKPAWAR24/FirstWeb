@@ -1,0 +1,15 @@
+# Crawl policy.
+#
+# The site is indexable by default. If an admin sets "indexable" off in
+# Admin -> SEO, a `noindex` meta tag is emitted at runtime, which overrides
+# anything allowed here.
+
+User-agent: *
+Allow: /
+Disallow: /api/
+
+# No crawlable content lives behind the admin panel, and letting it consume
+# crawl budget is pure waste.
+Disallow: /admin
+
+Sitemap: /sitemap.xml

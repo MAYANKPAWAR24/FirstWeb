@@ -1,229 +1,282 @@
-import { useEffect, useState, useMemo } from 'react';
-import { ExternalLink, Music2, Play } from 'lucide-react';
-import { sounds } from '@/lib/sound';
-import { lockPageScroll } from '@/lib/utils';
-import { useResponsiveItemLimit } from '@/hooks/useResponsiveItemLimit';
-import { isDirectVideoUrl, isEmbeddableVideoUrl } from '@/lib/media';
+import { useEffect, useMemo, useState } from 'react';
+import { ExternalLink, Image as ImageIcon, Music2, Play, Video } from 'lucide-react';
+import Section, { EmptyState } from '@/components/Section';
+import { RevealGroup } from '@/components/Reveal';
+import TiltCard from '@/components/TiltCard';
+import Overlay from '@/components/Overlay';
 import { VideoPlayer } from '@/components/VideoEmbed';
+import { isDirectAudioUrl, isImageUrl, resolveVideoSource } from '@/lib/media';
+import { sounds } from '@/lib/sound';
+import { formatDate } from '@/lib/utils';
 import type { MediaItem } from '@/lib/types';
 
-interface MediaProps {
+interface MediaSectionProps {
   items: MediaItem[];
   searchTarget?: string | null;
 }
 
-type MediaFilter = 'all' | 'photo' | 'video' | 'music';
+type FilterType = 'all' | MediaItem['type'];
 
-export default function Media({ items, searchTarget }: MediaProps) {
-  const [filter, setFilter] = useState<MediaFilter>('all');
+const FILTERS: { id: FilterType; label: string; icon: typeof ImageIcon }[] = [
+  { id: 'all', label: 'All', icon: ImageIcon },
+  { id: 'photo', label: 'Photos', icon: ImageIcon },
+  { id: 'video', label: 'Videos', icon: Video },
+  { id: 'music', label: 'Music', icon: Music2 },
+];
+
+/** Decides the glyph once, so the card and the lightbox cannot disagree. */
+function affordance(item: MediaItem) {
+  const source = resolveVideoSource(item.url);
+  if (source.kind === 'external' && isDirectAudioUrl(item.url)) return 'audio' as const;
+  if (source.kind === 'external' && isImageUrl(item.url)) return 'image' as const;
+  if (source.kind === 'embed' || source.kind === 'file') return 'play' as const;
+  return 'link' as const;
+}
+
+export default function Media({ items, searchTarget }: MediaSectionProps) {
+  const [filter, setFilter] = useState<FilterType>('all');
   const [lightbox, setLightbox] = useState<MediaItem | null>(null);
-  const [showAll, setShowAll] = useState(false);
-  const itemLimit = useResponsiveItemLimit();
 
   useEffect(() => {
-    if (!searchTarget) return;
-    setFilter('all');
-    setShowAll(true);
+    if (searchTarget) setFilter('all');
   }, [searchTarget]);
 
-  const filtered = useMemo(() => {
-    return items.filter((m) => m.visible !== false && (filter === 'all' || m.type === filter));
+  const visible = useMemo(() => {
+    return items
+      .filter((item) => item.visible !== false)
+      .filter((item) => filter === 'all' || item.type === filter)
+      .sort((a, b) => Number(b.featured === true) - Number(a.featured === true)
+        || b.date.localeCompare(a.date));
   }, [items, filter]);
 
   useEffect(() => {
-    if (!searchTarget || !showAll) return;
+    if (!searchTarget) return;
     const frame = requestAnimationFrame(() => {
-      document.getElementById(`search-target-media-${searchTarget}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById(`search-target-media-${searchTarget}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
     return () => cancelAnimationFrame(frame);
-  }, [searchTarget, showAll, filtered.length]);
-
-  const displayed = filtered.slice(0, showAll ? filtered.length : itemLimit);
-  const hasOverflow = filtered.length > itemLimit;
+  }, [searchTarget, visible.length]);
 
   return (
-    <section id="media" className="section-shell px-4 sm:px-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="text-center mb-12 reveal gpu-layer">
-          <p className="text-xs font-semibold tracking-[0.3em] text-cyan-400/60 uppercase mb-3">Visual Stories</p>
-          <h2 className="font-display text-4xl sm:text-5xl font-bold mb-4">Media</h2>
-          <div className="heading-line mx-auto mb-6" />
-          <p className="text-white/50 max-w-xl mx-auto text-sm">Photos, videos, and original music.</p>
-        </div>
-
-        {/* Filter */}
-        <div className="flex items-center justify-center gap-2 mb-10 reveal">
-          {(['all', 'photo', 'video', 'music'] as MediaFilter[]).map((f) => (
-            <button
-              key={f}
-              onClick={() => { sounds.click(); setFilter(f); setShowAll(false); }}
-              onMouseEnter={() => sounds.hover()}
-              className={`px-6 py-2 rounded-xl text-sm font-medium transition-all capitalize
-                ${filter === f ? 'btn-premium text-white' : 'glass text-white/50 hover:text-white/80'}
-              `}
-            >
-              {f === 'all' ? 'All' : f === 'photo' ? 'Photos' : f === 'video' ? 'Videos' : 'Music'}
-            </button>
-          ))}
-        </div>
-
-        {/* Grid */}
-        {displayed.length === 0 ? (
-          <div className="text-center py-20 text-white/40 text-sm">No media found.</div>
-        ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {displayed.map((item, i) => (
-              <div
-                key={item.id}
-                id={`search-target-media-${item.id}`}
-                className={`reveal group ${item.type === 'music' ? '' : 'cursor-pointer'}`}
-                data-cursor={item.type === 'music' ? 'hidden' : 'link'}
-                style={{ transitionDelay: `${i * 50}ms` }}
-                onClick={() => {
-                  if (item.type !== 'music') {
-                    sounds.open();
-                    setLightbox(item);
-                  }
-                }}
+    <Section
+      id="media"
+      eyebrow="Gallery"
+      title="Media"
+      lede="Photography, video and audio — a visual record of the work behind the words."
+      aside={(
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Filter media by type">
+          {FILTERS.map((option) => {
+            const Icon = option.icon;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={filter === option.id}
+                onClick={() => { sounds.click(); setFilter(option.id); }}
                 onMouseEnter={() => sounds.hover()}
+                className="filter-pill"
               >
-                <div className="glass-card rounded-2xl overflow-hidden relative">
-                  <div className="relative aspect-video overflow-hidden">
-                    {item.thumbnail ? (
-                      <img
-                        src={item.thumbnail}
-                        alt={item.title}
-                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                        loading="lazy"
-                        decoding="async"
-                        // External thumbnails can 404 or be blocked; fall back to
-                        // the type glyph instead of showing a broken image.
-                        onError={(event) => {
-                          event.currentTarget.style.display = 'none';
-                          event.currentTarget.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <div className={`${item.thumbnail ? 'hidden ' : ''}absolute inset-0 flex items-center justify-center bg-gradient-to-br from-cyan-950 to-slate-900 text-cyan-300`}>
-                      <Music2 size={42} strokeWidth={1.3} aria-hidden="true" />
-                    </div>
-                    <div className="media-image-shade absolute inset-0 opacity-60 group-hover:opacity-80 transition-opacity" />
-
-                    {/* Type badge */}
-                    <div className="absolute top-3 left-3">
-                      <span className="media-type-badge px-3 py-1 rounded-full bg-black/40 backdrop-blur-md text-xs font-medium text-white">
-                        {item.type === 'photo' ? 'Photo' : item.type === 'video' ? 'Video' : 'Music'}
-                      </span>
-                    </div>
-
-                    {/* Play overlay for videos */}
-                    {item.type === 'video' && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-14 h-14 rounded-full glass-strong flex items-center justify-center group-hover:scale-110 transition-transform pulse-glow">
-                          {isEmbeddableVideoUrl(item.url) || isDirectVideoUrl(item.url) ? (
-                            <Play size={20} className="translate-x-px" fill="currentColor" aria-hidden="true" />
-                          ) : (
-                            <ExternalLink size={20} aria-hidden="true" />
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Hover overlay */}
-                    <div className="media-image-caption absolute bottom-0 left-0 right-0 p-4 translate-y-2 group-hover:translate-y-0 transition-transform">
-                      <h3 className="font-display font-bold text-sm text-white mb-1">{item.title}</h3>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-white/50">{item.category}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {item.type === 'music' && (
-                    <div className="p-4">
-                      <audio controls preload="none" src={item.url} className="w-full" aria-label={`Play ${item.title}`}>
-                        Your browser does not support audio playback.
-                      </audio>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {hasOverflow && (
-          <div className="mt-8 flex justify-center">
-            <button
-              type="button"
-              onClick={() => { sounds.click(); setShowAll((current) => !current); }}
-              className="btn-premium rounded-xl px-7 py-3 text-xs font-semibold tracking-[0.16em] text-slate-800"
-            >
-              {showAll ? 'SHOW LESS' : 'SEE ALL'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Lightbox */}
-      {lightbox && (
-        <MediaLightbox item={lightbox} onClose={() => { sounds.close(); setLightbox(null); }} />
+                <Icon size={13} aria-hidden="true" className="mr-1 inline align-[-2px]" />
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
       )}
-    </section>
+    >
+      {visible.length === 0 ? (
+        <EmptyState
+          title={items.length === 0 ? 'No media yet' : 'Nothing in this category'}
+          body={items.length === 0
+            ? 'Photos, videos and audio added here appear in a gallery with a full-screen viewer.'
+            : 'Pick a different category, or add media from Admin → Media.'}
+        />
+      ) : (
+        <RevealGroup className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {visible.map((item) => (
+            <MediaCard key={item.id} item={item} onOpen={() => { sounds.open(); setLightbox(item); }} />
+          ))}
+        </RevealGroup>
+      )}
+
+      {lightbox && (
+        <MediaLightbox
+          item={lightbox}
+          onClose={() => { sounds.close(); setLightbox(null); }}
+          onNext={() => {
+            const index = visible.findIndex((entry) => entry.id === lightbox.id);
+            const next = visible[(index + 1) % visible.length];
+            if (next) { sounds.click(); setLightbox(next); }
+          }}
+          onPrevious={() => {
+            const index = visible.findIndex((entry) => entry.id === lightbox.id);
+            const previous = visible[(index - 1 + visible.length) % visible.length];
+            if (previous) { sounds.click(); setLightbox(previous); }
+          }}
+        />
+      )}
+    </Section>
   );
 }
 
-function MediaLightbox({ item, onClose }: { item: MediaItem; onClose: () => void }) {
-  useEffect(() => lockPageScroll(), []);
+/**
+ * A media card.
+ *
+ * This used to be a `<div onClick>`, which left every photo and video
+ * unreachable by keyboard and invisible as an interactive element to assistive
+ * tech while still looking clickable. It is now a real `<button>`.
+ *
+ * Music is the exception: an `<audio controls>` element cannot legally be
+ * nested inside a `<button>`, so audio cards render the player as the primary
+ * control and offer a separate, explicitly labelled link out.
+ */
+function MediaCard({ item, onOpen }: { item: MediaItem; onOpen: () => void }) {
+  const mode = affordance(item);
+  const isAudio = mode === 'audio';
+  const glyph = mode === 'play' ? <Play size={18} aria-hidden="true" className="translate-x-px" />
+    : mode === 'link' ? <ExternalLink size={17} aria-hidden="true" /> : null;
 
+  const body = (
+    <>
+      <div className="relative aspect-[4/3] overflow-hidden bg-[var(--surface-2)]">
+        {item.thumbnail ? (
+          <img
+            src={item.thumbnail}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            width={640}
+            height={480}
+            className="h-full w-full object-cover transition-transform duration-[var(--dur-drawer)] ease-[var(--ease-out-expo)] group-hover:scale-[1.06]"
+          />
+        ) : (
+          <span className="grid h-full w-full place-items-center text-[var(--faint)]" aria-hidden="true">
+            <ImageIcon size={26} />
+          </span>
+        )}
+        <div className="on-media-shade pointer-events-none absolute inset-0" aria-hidden="true" />
+
+        <span className="on-media absolute left-3 top-3 rounded-full bg-black/30 px-2.5 py-1 text-[11px] font-medium capitalize backdrop-blur-md">
+          {item.type}
+        </span>
+        {item.featured && (
+          <span className="on-media absolute right-3 top-3 rounded-full bg-black/30 px-2.5 py-1 text-[11px] font-medium backdrop-blur-md">
+            Featured
+          </span>
+        )}
+
+        {glyph && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-[var(--dur-hover)] group-hover:opacity-100 group-focus-visible:opacity-100"
+          >
+            <span className="grid h-12 w-12 place-items-center rounded-full border border-white/25 bg-black/35 text-white backdrop-blur-md">
+              {glyph}
+            </span>
+          </span>
+        )}
+
+        <span className="on-media absolute inset-x-3 bottom-2.5 text-xs font-medium drop-shadow">
+          {item.title}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+        <span className="truncate text-[13px] font-semibold text-[var(--ink)]">{item.title}</span>
+        <span className="shrink-0 text-[11px] text-[var(--faint)]">{formatDate(item.date)}</span>
+      </div>
+    </>
+  );
+
+  return (
+    <div id={`search-target-media-${item.id}`} data-reveal-item>
+      <TiltCard lit maxTilt={2} className="h-full overflow-hidden">
+        {isAudio ? (
+          <div className="flex h-full flex-col">
+            <div className="group relative aspect-[4/3] overflow-hidden bg-[var(--surface-2)]">{body}</div>
+            <div className="mt-auto px-3.5 pb-3.5">
+              <label className="sr-only" htmlFor={`audio-${item.id}`}>Play {item.title}</label>
+              <audio id={`audio-${item.id}`} controls preload="none" src={item.url} className="w-full" />
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpen}
+            onMouseEnter={() => sounds.hover()}
+            className="card card-interactive card-sheen group flex h-full w-full flex-col overflow-hidden text-left"
+          >
+            <span className="sr-only">Open {item.title}</span>
+            {body}
+          </button>
+        )}
+      </TiltCard>
+    </div>
+  );
+}
+
+function MediaLightbox({
+  item,
+  onClose,
+  onNext,
+  onPrevious,
+}: {
+  item: MediaItem;
+  onClose: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
+}) {
+  const source = resolveVideoSource(item.url);
+
+  // Arrow-key browsing, advertised by the hint below the media.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'ArrowRight') onNext();
+      else if (event.key === 'ArrowLeft') onPrevious();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onNext, onPrevious]);
 
   return (
-    <div
-      className="fixed inset-0 z-[9000] flex items-end sm:items-start sm:justify-center justify-center sm:px-4 sm:pt-24 sm:pb-6 animate-fade-in gpu-accelerated"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-md gpu-layer" />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={item.title}
-        className="ios-scroll relative w-full max-h-[100dvh] sm:max-h-[82dvh] overflow-y-auto animate-scale-in gpu-layer"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="glass-strong overflow-hidden rounded-t-3xl sm:rounded-3xl">
-          <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200/70 flex items-center justify-between gap-3 sticky top-0 z-10">
-            <div className="min-w-0">
-              <h3 className="font-display font-bold text-slate-900 truncate">{item.title}</h3>
-              <p className="text-xs text-slate-500 capitalize">{item.type} · {item.category}</p>
-            </div>
-            <button
-              onClick={onClose}
-              onMouseEnter={() => sounds.hover()}
-              className="shrink-0 w-9 h-9 rounded-xl glass flex items-center justify-center text-slate-500 hover:text-rose-500 transition-colors"
-              title="Close (ESC)"
-              aria-label="Close viewer"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="p-3 sm:p-4">
-            {item.type === 'photo' ? (
-              <img src={item.url} alt={item.title} className="w-full rounded-2xl" />
-            ) : item.type === 'video' ? (
-              <VideoPlayer url={item.url} title={item.title} />
-            ) : (
-              <audio controls autoPlay src={item.url} className="w-full">
-                Your browser does not support audio playback.
-              </audio>
-            )}
-          </div>
+    <Overlay open onClose={onClose} labelledBy="lightbox-title" variant="sheet" panelClassName="sm:max-w-4xl">
+      <div className="relative z-10 flex shrink-0 items-center gap-3 border-b border-[var(--line)] bg-[var(--surface-2)] px-5 py-3.5 pr-14">
+        <div className="min-w-0">
+          <h2 id="lightbox-title" className="truncate font-display text-base font-bold tracking-tight text-[var(--ink)]">
+            {item.title}
+          </h2>
+          <p className="mt-0.5 text-xs text-[var(--muted)]">
+            {item.type}{item.category && ` · ${item.category}`} · {formatDate(item.date)}
+          </p>
         </div>
       </div>
-    </div>
+
+      <div className="scroll-y flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[var(--surface-2)] p-4 sm:p-6">
+        {item.type === 'photo' || source.kind === 'external' ? (
+          isImageUrl(item.url) || item.type === 'photo' ? (
+            <img
+              src={item.url || item.thumbnail}
+              alt={item.title}
+              className="max-h-[70dvh] w-auto max-w-full rounded-card object-contain shadow-[0_18px_50px_-24px_rgba(12,12,17,0.5)]"
+            />
+          ) : (
+            <VideoPlayer url={item.url} title={item.title} />
+          )
+        ) : (
+          <VideoPlayer url={item.url} title={item.title} />
+        )}
+
+        <div className="flex w-full max-w-md items-center justify-between gap-2 pt-1">
+          <button type="button" onClick={onPrevious} onMouseEnter={() => sounds.hover()} className="btn btn-ghost h-9 min-h-0 px-3 text-xs">
+            Previous
+          </button>
+          <span className="text-[11px] text-[var(--faint)]">Use ← → to browse</span>
+          <button type="button" onClick={onNext} onMouseEnter={() => sounds.hover()} className="btn btn-ghost h-9 min-h-0 px-3 text-xs">
+            Next
+          </button>
+        </div>
+      </div>
+    </Overlay>
   );
 }
