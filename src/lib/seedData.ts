@@ -358,6 +358,7 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
         id: 'col-connect',
         heading: 'Connect',
         links: [
+          { id: 'col-connect-follow', label: 'Follow Me', section: 'follow', url: '' },
           { id: 'col-connect-contact', label: 'Contact', section: 'contact', url: '' },
           { id: 'col-connect-achievements', label: 'Achievements', section: 'achievements', url: '' },
           { id: 'col-connect-community', label: 'Community', section: 'community', url: '' },

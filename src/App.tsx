@@ -20,6 +20,7 @@ import Media from '@/sections/Media';
 import StudyMaterialSection from '@/sections/StudyMaterial';
 import AchievementsSection from '@/sections/Achievements';
 import CertificatesSection from '@/sections/Certificates';
+import FollowMeSection from '@/sections/FollowMe';
 import ContactSection from '@/sections/Contact';
 import CommunitySection from '@/sections/Community';
 import GamesSection from '@/sections/Games';
@@ -84,6 +85,7 @@ function AppContent() {
       />
     ),
     certificates: () => <CertificatesSection items={data.certificates} />,
+    follow: () => <FollowMeSection profile={data.profile} />,
     contact: () => (
       <ContactSection
         settings={data.contactSettings}

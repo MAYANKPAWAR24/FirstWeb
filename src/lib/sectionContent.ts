@@ -30,6 +30,8 @@ export function sectionHasContent(id: SectionId, data: PortfolioData): boolean {
       // A registry id the saved settings never mention still counts, so adding
       // a game in a later release cannot leave the section empty-but-linked.
       return true;
+    case 'follow':
+      return data.profile.socials.some((social) => social.visible !== false && social.url.trim() !== '');
     case 'community':
       return true;
     case 'home':

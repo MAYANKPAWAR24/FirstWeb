@@ -7,10 +7,14 @@ export type PublicSectionId = Exclude<SectionId, 'home' | 'custom'>;
 /**
  * Section ids that existed in records saved before Phase 3 promoted the
  * achievements / certificates / contact / community blocks out of the single
- * composite `extra` section. They are still accepted on read so an old local
+ * composite `extra` section. `extra` is still accepted on read so an old local
  * mirror or an old cloud bin keeps its content and ordering.
+ *
+ * `follow` used to be listed here too, which meant an old record's `follow`
+ * entry was dropped on upgrade. It is a real section again, so that entry now
+ * resolves normally and those visitors keep the section they had.
  */
-export const LEGACY_SECTION_IDS = ['extra', 'follow'] as const;
+export const LEGACY_SECTION_IDS = ['extra'] as const;
 
 /**
  * What each retired id expands into, in order, at the position where it was
@@ -19,7 +23,6 @@ export const LEGACY_SECTION_IDS = ['extra', 'follow'] as const;
  */
 const LEGACY_EXPANSION: Record<string, PublicSectionId[]> = {
   extra: ['achievements', 'certificates', 'contact', 'community'],
-  follow: [],
 };
 
 export const SECTION_ORDER_KEY = 'portfolio_section_order_v3';
@@ -35,6 +38,7 @@ export const PUBLIC_SECTIONS: { id: PublicSectionId; label: string }[] = [
   { id: 'study', label: 'Study Material' },
   { id: 'achievements', label: 'Achievements' },
   { id: 'certificates', label: 'Certificates' },
+  { id: 'follow', label: 'Follow Me' },
   { id: 'contact', label: 'Contact' },
   { id: 'community', label: 'Community' },
   { id: 'games', label: 'Play Break' },

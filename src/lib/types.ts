@@ -168,6 +168,7 @@ export type SectionId =
   | 'study'
   | 'achievements'
   | 'certificates'
+  | 'follow'
   | 'contact'
   | 'community'
   | 'games'
