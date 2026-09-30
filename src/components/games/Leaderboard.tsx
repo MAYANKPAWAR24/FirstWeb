@@ -84,10 +84,10 @@ export default function Leaderboard({
   const needsName = settings.requireName && rows.every((row) => !row.local);
 
   return (
-    <section
-      aria-label={`${settings.title} for ${gameTitle}`}
-      className="card card-sheen w-full max-w-lg rounded-panel p-5 sm:p-6"
-    >
+    /* A div, not a section: this sits inside the Play Break <section>, and a
+       nested <section> is invalid HTML. The visible heading below already
+       names the region. */
+    <div className="card card-sheen w-full max-w-lg rounded-panel p-5 sm:p-6">
       <header className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-2 font-display text-base font-bold tracking-tight text-[var(--ink)]">
           <Trophy size={16} aria-hidden="true" className="text-[var(--accent)]" />
@@ -200,6 +200,6 @@ export default function Leaderboard({
         <UserRound size={12} aria-hidden="true" className="mt-0.5 flex-none" />
         Scores are stored on this device only and are never uploaded.
       </p>
-    </section>
+    </div>
   );
 }

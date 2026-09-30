@@ -20,7 +20,7 @@ const GUESTBOOK_NAME_MAX_LENGTH = 50;
  * the client, or the id will be stripped on the very next save.
  */
 const DEFAULT_SECTION_ORDER = [
-  'profile', 'portfolio', 'literature', 'media', 'study',
+  'profile', 'resume', 'portfolio', 'literature', 'media', 'study',
   'achievements', 'certificates', 'contact', 'community', 'games',
 ];
 const TOGGLEABLE_BLOCKS = [...DEFAULT_SECTION_ORDER, 'visitors'];

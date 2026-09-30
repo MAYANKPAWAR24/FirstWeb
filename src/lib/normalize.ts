@@ -28,7 +28,23 @@ import {
   type SoundSettings,
   type LeaderboardSettings,
   type OfficialScore,
+  type EducationEntry,
+  type ExperienceEntry,
+  type ExperienceType,
+  type LanguageEntry,
+  type LanguageProficiency,
+  type ResumeBlock,
+  type ResumeBlockKind,
+  type ResumeSettings,
 } from './types';
+
+/** Enumerations shared by the resume normalizers. */
+const EXPERIENCE_TYPES: ExperienceType[] = [
+  'full-time', 'part-time', 'internship', 'freelance', 'contract', 'volunteer',
+];
+const LANGUAGE_PROFICIENCIES: LanguageProficiency[] = [
+  'native', 'fluent', 'advanced', 'intermediate', 'basic',
+];
 import { MAX_ENTRIES, sanitizePlayerName } from './gameScores';
 
 /**
@@ -415,6 +431,141 @@ export function normalizeLeaderboardSettings(
     showLocal: boolKey(source, 'showLocal', fallback.showLocal),
     officialEntries,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Resume
+ * ------------------------------------------------------------------ */
+
+const RESUME_BLOCK_KINDS: ResumeBlockKind[] = [
+  'education', 'experience', 'language', 'skills', 'certification', 'award', 'text',
+];
+
+/**
+ * Normalises any of the ordered, id-keyed lists.
+ *
+ * Drops unusable entries, de-dupes ids, coerces `order` to a finite integer and
+ * forces `visible` to a real boolean.
+ *
+ * `order` is re-keyed to a dense 0..n-1 sequence *after* filtering. Using the
+ * source index instead would leave a gap wherever an entry was dropped, and a
+ * gap means the normalizer is not a fixed point: normalising twice would keep
+ * shifting the numbers. Canonical output is what makes the cloud merge's
+ * "present key wins" rule safe to re-run on every load.
+ */
+function normalizeOrdered<T extends { id: string; order: number; visible: boolean }>(
+  value: unknown,
+  build: (raw: Record<string, unknown>, index: number, id: string) => Omit<T, 'id' | 'order' | 'visible'> | null,
+): T[] {
+  const seen = new Set<string>();
+  const kept: T[] = [];
+
+  asArray(value).filter(isRecord).forEach((raw, index) => {
+    const id = asString(raw.id).trim() || `entry-${index + 1}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    const rest = build(raw, index, id);
+    if (!rest) return;
+    // A raw order is honoured when present, then compacted below.
+    kept.push({
+      ...rest,
+      id,
+      order: Number.isFinite(Number(raw.order)) ? Math.trunc(Number(raw.order)) : index,
+      visible: raw.visible !== false,
+    } as unknown as T);
+  });
+
+  return [...kept]
+    .sort((a, b) => a.order - b.order)
+    .map((entry, position) => ({ ...entry, order: position }));
+}
+
+/**
+ * Text is trimmed and clamped but never emptied: an entry that exists with a
+ * blank name would render an empty row, so it is dropped instead.
+ */
+function nonBlank(value: unknown, max = 160): string {
+  return asString(value).trim().slice(0, max);
+}
+
+export function normalizeEducation(value: unknown): EducationEntry[] | undefined {
+  if (value === undefined) return undefined;
+  return normalizeOrdered<EducationEntry>(value, (raw) => {
+    const institution = nonBlank(raw.institution, 120);
+    if (!institution) return null;
+    return {
+      institution,
+      level: nonBlank(raw.level, 40),
+      board: nonBlank(raw.board, 120),
+      field: nonBlank(raw.field, 120),
+      period: nonBlank(raw.period, 60),
+      location: nonBlank(raw.location, 120),
+      score: nonBlank(raw.score, 60),
+      scoreLabel: nonBlank(raw.scoreLabel, 40),
+      notes: asString(raw.notes),
+    };
+  });
+}
+
+export function normalizeExperiences(value: unknown): ExperienceEntry[] | undefined {
+  if (value === undefined) return undefined;
+  return normalizeOrdered<ExperienceEntry>(value, (raw) => {
+    const role = nonBlank(raw.role, 120);
+    if (!role) return null;
+    return {
+      role,
+      organisation: nonBlank(raw.organisation, 120),
+      type: asOneOf(raw.type, EXPERIENCE_TYPES, 'full-time'),
+      period: nonBlank(raw.period, 60),
+      location: nonBlank(raw.location, 120),
+      summary: asString(raw.summary),
+      highlights: asStringList(raw.highlights, []).slice(0, 12),
+    };
+  });
+}
+
+export function normalizeLanguages(value: unknown): LanguageEntry[] | undefined {
+  if (value === undefined) return undefined;
+  return normalizeOrdered<LanguageEntry>(value, (raw) => {
+    // Trimmed, never escaped and never transliterated. Devanagari, Tamil,
+    // Arabic and any other script must survive storage untouched.
+    const name = nonBlank(raw.name, 60);
+    if (!name) return null;
+    return {
+      name,
+      proficiency: asOneOf(raw.proficiency, LANGUAGE_PROFICIENCIES, 'fluent'),
+      note: nonBlank(raw.note, 80),
+    };
+  });
+}
+
+export function normalizeResumeSettings(
+  value: unknown,
+  fallback: ResumeSettings,
+): ResumeSettings | undefined {
+  if (value === undefined) return undefined;
+  const source = isRecord(value) ? value : {};
+  return {
+    eyebrow: textKey(source, 'eyebrow', fallback.eyebrow),
+    title: textKey(source, 'title', fallback.title),
+    intro: asString(source.intro),
+    showDownload: boolKey(source, 'showDownload', fallback.showDownload),
+    downloadLabel: textKey(source, 'downloadLabel', fallback.downloadLabel),
+    downloadUrl: asString(source.downloadUrl).trim(),
+    blocks: normalizeResumeBlocks(source.blocks, fallback.blocks),
+  };
+}
+
+export function normalizeResumeBlocks(
+  value: unknown,
+  fallback: ResumeBlock[],
+): ResumeBlock[] {
+  if (!Array.isArray(value)) return fallback;
+  return normalizeOrdered<ResumeBlock>(value, (raw, index) => ({
+    kind: asOneOf(raw.kind, RESUME_BLOCK_KINDS, RESUME_BLOCK_KINDS[index] ?? 'text'),
+    title: nonBlank(raw.title, 80),
+    content: asString(raw.content),
+  }));
 }
 
 /* ------------------------------------------------------------------ *

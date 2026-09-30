@@ -933,6 +933,11 @@ textarea.field { min-height: 7rem; resize: vertical; line-height: 1.6; }
   border-color: rgba(10, 130, 189, 0.3);
   box-shadow: 0 2px 4px rgba(12, 12, 17, 0.05), 0 18px 44px -20px rgba(12, 12, 17, 0.22);
 }
+/* The border lights up the moment the inner control is pressed, which works
+   without `:has()` and therefore without any browser-support question. */
+@supports selector(:has(*)) {
+  .card:has(.card-action:active) { border-color: rgba(10, 130, 189, 0.34); }
+}
 @media (hover: hover) and (pointer: fine) {
   .card:focus-within { transform: translate3d(0, -3px, 0); }
 }
@@ -1037,6 +1042,67 @@ html.custom-cursor-active [class*='cursor-default'] { cursor: none !important; }
 /* The text caret stays usable while typing. */
 html.custom-cursor-active input,
 html.custom-cursor-active textarea { cursor: text !important; }
+
+/* ==================================================================
+   INTERACTION FEEL
+
+   Three things separate a control that feels alive from one that merely
+   changes colour: it lifts on hover, it compresses on press, and it settles
+   again. All three are transform- and shadow-only, so none of them trigger
+   layout, and all three collapse under the reduced-motion rule at the bottom
+   of this file.
+   ================================================================== */
+
+/* Press. Deliberately near-instant: a transition delay on the press state
+   makes a button feel laggy rather than tactile. */
+.btn:active,
+.btn-icon:active,
+.chip:active,
+.filter-pill:active,
+.nav-link:active {
+  transform: translate3d(0, 1px, 0) scale(0.975);
+  transition-duration: 60ms;
+}
+/* The shadow collapses on press so the control reads as being pushed into the
+   surface rather than sliding over it. */
+.btn:active { box-shadow: none; }
+
+/* Keyboard activation must not jump the control a full pixel; only a real
+   pointer press should. */
+.btn:focus-visible:active,
+.btn-icon:focus-visible:active { transform: none; }
+
+.btn-ghost:hover,
+.chip:hover { transform: translate3d(0, -1px, 0); }
+.btn-ghost:active,
+.chip:active { transform: translate3d(0, 1px, 0) scale(0.975); }
+
+/* Icon buttons gain a faint ring on press so a tap reads as confirmed even on
+   a small target. */
+.btn-icon:active {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: rgba(10, 130, 189, 0.34);
+}
+
+/* Filter pills: the selected one keeps its ring, the unselected ones ease
+   into the hover state rather than snapping. */
+.filter-pill { transition-property: color, background-color, border-color, box-shadow, transform; }
+.filter-pill:not([aria-pressed='true']):active { background: rgba(16, 18, 25, 0.08); }
+
+/* Stretched card actions. The card lifts and its border lights up when the
+   control inside it is activated, so clicking anywhere on a card feels like
+   clicking one object rather than a hidden overlay.
+
+   `:has()` is behind an explicit @supports so an engine that lacks it drops
+   only this declaration and keeps the `:focus-within` rule above it, rather
+   than discarding the selector list it shares. */
+@supports selector(:has(*)) {
+  .card:has(.card-action:active) { transform: translate3d(0, -1px, 0) scale(0.995); }
+}
+
+/* Tags and progress fills ease rather than jump. */
+.tag { transition: background-color var(--dur-hover) var(--ease-out-expo), border-color var(--dur-hover) var(--ease-out-expo), color var(--dur-hover) var(--ease-out-expo); }
+.progress-fill { transition: transform 180ms var(--ease-out-expo); }
 
 .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }

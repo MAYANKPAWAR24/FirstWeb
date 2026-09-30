@@ -2,7 +2,6 @@ import { MapPin, Mail, Sparkles } from 'lucide-react';
 import Section from '@/components/Section';
 import Reveal, { RevealGroup } from '@/components/Reveal';
 import TiltCard from '@/components/TiltCard';
-import { sounds } from '@/lib/sound';
 import type { Profile, SkillGroups } from '@/lib/types';
 import { EmptyState } from '@/components/Section';
 
@@ -150,28 +149,6 @@ export default function ProfileSection({ profile, skillGroups, email }: ProfileS
             </div>
           </Reveal>
 
-          {profile.highlights.length > 0 && (
-            <Reveal from="right" delay={110}>
-              <div className="card card-sheen rounded-panel p-6 sm:p-7">
-                <h3 className="font-display text-lg font-bold tracking-tight text-[var(--ink)]">By the numbers</h3>
-                <RevealGroup className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {profile.highlights.map((stat) => (
-                    <div
-                      key={stat.label}
-                      data-reveal-item
-                      onMouseEnter={() => sounds.hover()}
-                      className="rounded-card border border-[var(--line)] bg-[var(--surface-2)] px-3 py-3.5"
-                    >
-                      <p className="font-display text-xl font-bold tracking-tight text-[var(--ink)]">{stat.value}</p>
-                      <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wider text-[var(--faint)]">
-                        {stat.label}
-                      </p>
-                    </div>
-                  ))}
-                </RevealGroup>
-              </div>
-            </Reveal>
-          )}
         </div>
       </div>
     </Section>

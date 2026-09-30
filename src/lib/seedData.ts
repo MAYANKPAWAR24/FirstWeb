@@ -428,7 +428,7 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
     hidden: [],
     order: [
       'tic-tac-toe', 'memory', 'twenty-forty-eight', 'snake',
-      'word-forge', 'math-sprint', 'rock-paper-scissors', 'reaction',
+      'pulse', 'math-sprint', 'rock-paper-scissors', 'reaction',
     ],
   },
 
@@ -453,6 +453,123 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
     // Curated by the site owner. Empty by default so nothing implies a score
     // that was never actually achieved.
     officialEntries: [],
+  },
+
+  /* ---- Resume ----
+   *
+   * Demo content. The `email` field is left empty on purpose elsewhere in this
+   * seed for the same reason these are marked as samples: a page presenting
+   * invented qualifications as fact is worse than an empty one. Replace them
+   * in Admin -> Resume.
+   */
+  education: [
+    {
+      id: 'edu-1',
+      institution: 'Delhi Public School',
+      level: 'Senior Secondary',
+      board: 'CBSE',
+      field: 'Science (Physics, Chemistry, Mathematics)',
+      period: '2019 – 2021',
+      location: 'Bengaluru, India',
+      score: '92.4%',
+      scoreLabel: 'CBSE Averages',
+      notes: 'Subject topper in English and Psychology.',
+      visible: true,
+      order: 0,
+    },
+    {
+      id: 'edu-2',
+      institution: 'National Institute of Technology',
+      level: 'Bachelor of Technology',
+      board: 'University',
+      field: 'Computer Science & Engineering',
+      period: '2021 – 2025',
+      location: 'Bengaluru, India',
+      score: '8.74 / 10',
+      scoreLabel: 'CGPA',
+      notes: 'Final-year project on an offline-first reading platform.',
+      visible: true,
+      order: 1,
+    },
+  ],
+
+  experiences: [
+    {
+      id: 'exp-1',
+      role: 'Freelance Front-End Developer',
+      organisation: 'Independent',
+      type: 'freelance',
+      period: '2024 – Present',
+      location: 'Remote',
+      summary: 'Build and maintain content platforms for writers and small studios, from data model through to the last interaction.',
+      highlights: [
+        'Shipped six client sites built on a shared component system.',
+        'Cut largest-contentful-paint by roughly half on a slow mobile build.',
+        'Wrote the content model so editors could ship without engineering help.',
+      ],
+      visible: true,
+      order: 0,
+    },
+    {
+      id: 'exp-2',
+      role: 'Software Engineering Intern',
+      organisation: 'Product Studio',
+      type: 'internship',
+      period: 'Summer 2024',
+      location: 'Bengaluru, India',
+      summary: 'Worked on the reading experience and the admin tooling behind it.',
+      highlights: [
+        'Rebuilt the reading view around a single responsive typeface scale.',
+        'Added keyboard navigation and focus management across all dialogs.',
+      ],
+      visible: true,
+      order: 1,
+    },
+    {
+      id: 'exp-3',
+      role: 'Open Source Contributor',
+      organisation: 'Various',
+      type: 'volunteer',
+      period: '2023 – Present',
+      location: 'Remote',
+      summary: 'Documentation, accessibility fixes and small bug reports.',
+      highlights: ['Improved screen-reader semantics on two community tools.'],
+      visible: true,
+      order: 2,
+    },
+  ],
+
+  /**
+   * Languages. Written in their own scripts deliberately — the Devanagari,
+   * Tamil and Arabic entries must survive storage, normalising and rendering
+   * unchanged. Nothing here is transliterated or escaped.
+   */
+  languages: [
+    { id: 'lang-1', name: 'English', proficiency: 'native', note: 'Writing and editing', visible: true, order: 0 },
+    { id: 'lang-2', name: 'हिन्दी', proficiency: 'fluent', note: 'Native language', visible: true, order: 1 },
+    { id: 'lang-3', name: 'मराठी', proficiency: 'fluent', note: 'Home language', visible: true, order: 2 },
+    { id: 'lang-4', name: 'தமிழ்', proficiency: 'intermediate', note: 'Reading and conversation', visible: true, order: 3 },
+    { id: 'lang-5', name: 'العربية', proficiency: 'basic', note: 'Reading', visible: true, order: 4 },
+    { id: 'lang-6', name: 'Español', proficiency: 'basic', note: 'Beginning', visible: true, order: 5 },
+  ],
+
+  resumeSettings: {
+    eyebrow: 'Resume',
+    title: 'Education & Experience',
+    intro: 'Where I studied, what I have built, and the languages I work in.',
+    // No file ships with the seed, so the button stays hidden until an admin
+    // adds one. A download button that downloads nothing is worse than none.
+    showDownload: false,
+    downloadLabel: 'Download Resume',
+    downloadUrl: '',
+    blocks: [
+      { id: 'rb-edu', kind: 'education', title: 'Education', content: '', visible: true, order: 0 },
+      { id: 'rb-exp', kind: 'experience', title: 'Experience', content: '', visible: true, order: 1 },
+      { id: 'rb-lang', kind: 'language', title: 'Languages', content: '', visible: true, order: 2 },
+      { id: 'rb-skills', kind: 'skills', title: 'Core Skills', content: '', visible: true, order: 3 },
+      { id: 'rb-cert', kind: 'certification', title: 'Certifications', content: '', visible: true, order: 4 },
+      { id: 'rb-note', kind: 'text', title: 'Additional Information', content: '', visible: false, order: 5 },
+    ],
   },
 
   chatbotSettings: {

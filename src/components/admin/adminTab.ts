@@ -4,6 +4,7 @@ import { createContext, useContext } from 'react';
 export type AdminTabId =
   | 'homepage'
   | 'profile'
+  | 'resume'
   | 'portfolio'
   | 'poems'
   | 'media'

@@ -14,6 +14,7 @@ import Navigation from '@/components/Navigation';
 import AIChatbot from '@/components/AIChatbot';
 import Hero from '@/sections/Hero';
 import ProfileSection from '@/sections/Profile';
+import ResumeSection from '@/sections/Resume';
 import PortfolioSection from '@/sections/Portfolio';
 import Literature from '@/sections/Literature';
 import Media from '@/sections/Media';
@@ -54,6 +55,17 @@ function AppContent() {
 
   const sectionRenderers: Partial<Record<SectionId, () => JSX.Element>> = {
     profile: () => <ProfileSection profile={data.profile} skillGroups={data.skillGroups} email={data.contactSettings.email || data.profile.email} />,
+    resume: () => (
+      <ResumeSection
+        settings={data.resumeSettings}
+        education={data.education}
+        experiences={data.experiences}
+        languages={data.languages}
+        skills={data.portfolioBlocks}
+        certificates={data.certificates}
+        achievements={data.achievements}
+      />
+    ),
     portfolio: () => (
       <PortfolioSection
         settings={data.portfolioSettings}

@@ -109,7 +109,7 @@ export type MiniGameKind =
   | 'twenty-forty-eight'
   | 'rock-paper-scissors'
   | 'reaction'
-  | 'word-forge'
+  | 'pulse'
   | 'math-sprint';
 
 export const CUSTOM_SECTION_TYPES: CustomSectionType[] = ['text', 'media', 'widget', 'game'];
@@ -120,7 +120,7 @@ export const MINI_GAME_KINDS: MiniGameKind[] = [
   'twenty-forty-eight',
   'rock-paper-scissors',
   'reaction',
-  'word-forge',
+  'pulse',
   'math-sprint',
 ];
 
@@ -162,6 +162,7 @@ export interface ChatbotFAQ {
 export type SectionId =
   | 'home'
   | 'profile'
+  | 'resume'
   | 'portfolio'
   | 'literature'
   | 'media'
@@ -205,6 +206,12 @@ export interface PortfolioData {
   chatbotSettings: ChatbotSettings;
   soundSettings: SoundSettings;
   leaderboardSettings: LeaderboardSettings;
+
+  /** Resume parts. Each array is independent and admin-managed. */
+  education: EducationEntry[];
+  experiences: ExperienceEntry[];
+  languages: LanguageEntry[];
+  resumeSettings: ResumeSettings;
 }
 
 /* ------------------------------------------------------------------ *
@@ -373,6 +380,109 @@ export interface LeaderboardSettings {
   /** Show the local board alongside, or curated entries only. */
   showLocal: boolean;
   officialEntries: OfficialScore[];
+}
+
+/* ------------------------------------------------------------------ *
+ * Resume
+ *
+ * One section holding the parts a recruiter actually scans for. The parts
+ * are editable data rather than fixed markup, and the *order and visibility*
+ * of the parts is itself editable, so a designer can add a block the schema
+ * has never heard of without touching code.
+ * ------------------------------------------------------------------ */
+
+export interface EducationEntry {
+  id: string;
+  /** School or college name. */
+  institution: string;
+  /** `School`, `College`, `University`, or anything the admin types. */
+  level: string;
+  /** Board or university body, e.g. `CBSE`, `University of Mumbai`. */
+  board: string;
+  /** Subject, e.g. `Computer Science`. */
+  field: string;
+  /** Free-form, so both `2019 – 2023` and `2023` work. */
+  period: string;
+  location: string;
+  /** `86%`, `8.7 CGPA`, `First Class`. */
+  score: string;
+  /** What the score means: `Percentage`, `CGPA`, `Grade`. */
+  scoreLabel: string;
+  notes: string;
+  visible: boolean;
+  order: number;
+}
+
+export type ExperienceType =
+  | 'full-time'
+  | 'part-time'
+  | 'internship'
+  | 'freelance'
+  | 'contract'
+  | 'volunteer';
+
+export interface ExperienceEntry {
+  id: string;
+  role: string;
+  organisation: string;
+  type: ExperienceType;
+  period: string;
+  location: string;
+  summary: string;
+  /** Bullet points. */
+  highlights: string[];
+  visible: boolean;
+  order: number;
+}
+
+export type LanguageProficiency =
+  | 'native'
+  | 'fluent'
+  | 'advanced'
+  | 'intermediate'
+  | 'basic';
+
+export interface LanguageEntry {
+  id: string;
+  /** Any script. Devanagari and other Unicode are preserved verbatim. */
+  name: string;
+  proficiency: LanguageProficiency;
+  /** Optional: what it is used for. */
+  note: string;
+  visible: boolean;
+  order: number;
+}
+
+export type ResumeBlockKind =
+  | 'education'
+  | 'experience'
+  | 'language'
+  | 'skills'
+  | 'certification'
+  | 'award'
+  | 'text';
+
+export interface ResumeBlock {
+  id: string;
+  kind: ResumeBlockKind;
+  /** Heading for the block. Editable so it never fights the data. */
+  title: string;
+  /** Only used by `text` blocks. */
+  content: string;
+  visible: boolean;
+  order: number;
+}
+
+export interface ResumeSettings {
+  eyebrow: string;
+  title: string;
+  intro: string;
+  /** Show the download button. Hides it when there is no file to offer. */
+  showDownload: boolean;
+  downloadLabel: string;
+  downloadUrl: string;
+  /** Order and visibility of the parts. An absent kind is simply not shown. */
+  blocks: ResumeBlock[];
 }
 
 export type ChatbotTone = 'professional' | 'friendly';

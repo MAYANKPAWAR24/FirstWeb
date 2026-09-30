@@ -1,5 +1,5 @@
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
-import { Brain, Calculator, Feather, Gamepad2, Gauge, Grid3x3, Swords, Zap } from 'lucide-react';
+import { AudioWaveform, Brain, Calculator, Gamepad2, Gauge, Grid3x3, Swords, Zap } from 'lucide-react';
 import type { MiniGameKind } from '@/lib/types';
 
 /**
@@ -99,15 +99,15 @@ export const GAME_REGISTRY: Record<MiniGameKind, GameDefinition> = {
     heightClass: 'h-[18rem]',
     load: () => import('./ReactionTap'),
   },
-  'word-forge': {
-    id: 'word-forge',
-    title: 'Word Forge',
-    blurb: 'Guess the hidden word before the six guesses run out.',
-    tag: 'Word',
-    icon: Feather,
-    tags: ['Vocabulary', 'Solo'],
+  pulse: {
+    id: 'pulse',
+    title: 'Pulse',
+    blurb: 'Tap the instant the ring hits the marked radius.',
+    tag: 'Timing',
+    icon: AudioWaveform,
+    tags: ['Timing', 'Reflex'],
     heightClass: 'h-[26rem]',
-    load: () => import('./WordForge'),
+    load: () => import('./Pulse'),
   },
   'math-sprint': {
     id: 'math-sprint',
@@ -127,7 +127,7 @@ export const DEFAULT_GAME_ORDER: MiniGameKind[] = [
   'memory',
   'twenty-forty-eight',
   'snake',
-  'word-forge',
+    'pulse',
   'math-sprint',
   'rock-paper-scissors',
   'reaction',

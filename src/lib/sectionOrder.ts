@@ -35,6 +35,7 @@ const LEGACY_SECTION_ORDER_KEY_V2 = 'portfolio_section_order_v2';
 
 export const PUBLIC_SECTIONS: { id: PublicSectionId; label: string }[] = [
   { id: 'profile', label: 'About' },
+  { id: 'resume', label: 'Resume' },
   { id: 'portfolio', label: 'Portfolio' },
   { id: 'literature', label: 'Literature' },
   { id: 'media', label: 'Media' },

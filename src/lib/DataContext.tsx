@@ -3,7 +3,8 @@ import type {
   PortfolioData, Poem, MediaItem, StudyMaterial, Achievement, Certificate, GuestbookEntry, Profile,
   CustomSection, ChatbotFAQ, HeroSettings, SkillGroups, PortfolioBlock, PortfolioSettings,
   ContactSettings, FooterSettings, SeoSettings, AnimationSettings, GameSettings, ChatbotSettings,
-  SoundSettings, LeaderboardSettings,
+  SoundSettings, LeaderboardSettings, EducationEntry, ExperienceEntry,
+  LanguageEntry, ResumeSettings,
 } from './types';
 import { seedData } from './seedData';
 import { uid } from './utils';
@@ -17,6 +18,10 @@ import {
   normalizeGameSettings,
   normalizeSoundSettings,
   normalizeLeaderboardSettings,
+  normalizeEducation,
+  normalizeExperiences,
+  normalizeLanguages,
+  normalizeResumeSettings,
   normalizeHeroSettings,
   normalizePortfolioBlocks,
   normalizePortfolioSettings,
@@ -83,6 +88,7 @@ const SETTINGS_KEYS = [
   'chatbotSettings',
   'soundSettings',
   'leaderboardSettings',
+  'resumeSettings',
 ] as const;
 
 type SettingsKey = (typeof SETTINGS_KEYS)[number];
@@ -94,6 +100,7 @@ const RESETTABLE_KEYS = [
   'gameSettings', 'chatbotSettings', 'poems', 'media', 'studyMaterials',
   'achievements', 'certificates', 'guestbook', 'chatbotFAQs', 'customSections',
   'soundSettings', 'leaderboardSettings',
+  'education', 'experiences', 'languages', 'resumeSettings',
 ] as const;
 
 function normalizeContentTypes(data: PortfolioData): PortfolioData {
@@ -144,6 +151,10 @@ function normalizeData(input: Partial<PortfolioData> | null | undefined): Portfo
     gameSettings: normalizeGameSettings(source.gameSettings, seedData.gameSettings) ?? seedData.gameSettings,
     soundSettings: normalizeSoundSettings(source.soundSettings, seedData.soundSettings) ?? seedData.soundSettings,
     leaderboardSettings: normalizeLeaderboardSettings(source.leaderboardSettings, seedData.leaderboardSettings) ?? seedData.leaderboardSettings,
+    education: normalizeEducation(source.education) ?? seedData.education,
+    experiences: normalizeExperiences(source.experiences) ?? seedData.experiences,
+    languages: normalizeLanguages(source.languages) ?? seedData.languages,
+    resumeSettings: normalizeResumeSettings(source.resumeSettings, seedData.resumeSettings) ?? seedData.resumeSettings,
     chatbotSettings: normalizeChatbotSettings(source.chatbotSettings, seedData.chatbotSettings) ?? seedData.chatbotSettings,
   });
 }
@@ -219,6 +230,19 @@ interface DataContextValue {
   setChatbotSettings: (settings: ChatbotSettings) => void;
   setSoundSettings: (settings: SoundSettings) => void;
   setLeaderboardSettings: (settings: LeaderboardSettings) => void;
+  setResumeSettings: (settings: ResumeSettings) => void;
+  addEducation: (entry: Omit<EducationEntry, 'id'>) => void;
+  updateEducation: (id: string, entry: Partial<EducationEntry>) => void;
+  deleteEducation: (id: string) => void;
+  moveEducation: (id: string, direction: -1 | 1) => void;
+  addExperience: (entry: Omit<ExperienceEntry, 'id'>) => void;
+  updateExperience: (id: string, entry: Partial<ExperienceEntry>) => void;
+  deleteExperience: (id: string) => void;
+  moveExperience: (id: string, direction: -1 | 1) => void;
+  addLanguage: (entry: Omit<LanguageEntry, 'id'>) => void;
+  updateLanguage: (id: string, entry: Partial<LanguageEntry>) => void;
+  deleteLanguage: (id: string) => void;
+  moveLanguage: (id: string, direction: -1 | 1) => void;
   // Admin password
   setAdminPassword: (pw: string) => Promise<void>;
   // Drafts
@@ -336,6 +360,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           studyMaterials: snapshot.data.studyMaterials ?? current.studyMaterials,
           achievements: snapshot.data.achievements ?? current.achievements,
           certificates: snapshot.data.certificates ?? current.certificates,
+          education: snapshot.data.education ?? current.education,
+          experiences: snapshot.data.experiences ?? current.experiences,
+          languages: snapshot.data.languages ?? current.languages,
           customSections: snapshot.data.customSections ?? current.customSections,
           chatbotFAQs: snapshot.data.chatbotFAQs ?? current.chatbotFAQs,
           guestbook: [
@@ -788,6 +815,116 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const setResumeSettings = useCallback((settings: ResumeSettings) => {
+    setData((d) => ({
+      ...d,
+      resumeSettings: normalizeResumeSettings(settings, seedData.resumeSettings) ?? settings,
+    }));
+  }, []);
+
+  /* ---- Resume CRUD ----
+   * Reordering rewrites `order` as a dense 0..n-1 sequence rather than
+   * swapping two values, so a list can never end up with duplicate or gapped
+   * order keys after several moves. */
+
+  const addEducation = useCallback((entry: Omit<EducationEntry, 'id'>) => {
+    setData((d) => ({
+      ...d,
+      education: [...d.education, {
+        ...entry,
+        id: uid(),
+        institution: entry.institution.trim() || 'Untitled entry',
+        visible: entry.visible !== false,
+        order: d.education.length,
+      }],
+    }));
+  }, []);
+
+  const updateEducation = useCallback((id: string, entry: Partial<EducationEntry>) => {
+    setData((d) => ({ ...d, education: d.education.map((item) => (item.id === id ? { ...item, ...entry } : item)) }));
+  }, []);
+
+  const deleteEducation = useCallback((id: string) => {
+    setData((d) => ({ ...d, education: d.education.filter((item) => item.id !== id) }));
+  }, []);
+
+  const moveEducation = useCallback((id: string, direction: -1 | 1) => {
+    setData((d) => {
+      const sorted = [...d.education].sort((a, b) => a.order - b.order);
+      const index = sorted.findIndex((item) => item.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= sorted.length) return d;
+      [sorted[index], sorted[target]] = [sorted[target], sorted[index]];
+      return { ...d, education: sorted.map((item, position) => ({ ...item, order: position })) };
+    });
+  }, []);
+
+  const addExperience = useCallback((entry: Omit<ExperienceEntry, 'id'>) => {
+    setData((d) => ({
+      ...d,
+      experiences: [...d.experiences, {
+        ...entry,
+        id: uid(),
+        role: entry.role.trim() || 'Untitled role',
+        visible: entry.visible !== false,
+        order: d.experiences.length,
+      }],
+    }));
+  }, []);
+
+  const updateExperience = useCallback((id: string, entry: Partial<ExperienceEntry>) => {
+    setData((d) => ({ ...d, experiences: d.experiences.map((item) => (item.id === id ? { ...item, ...entry } : item)) }));
+  }, []);
+
+  const deleteExperience = useCallback((id: string) => {
+    setData((d) => ({ ...d, experiences: d.experiences.filter((item) => item.id !== id) }));
+  }, []);
+
+  const moveExperience = useCallback((id: string, direction: -1 | 1) => {
+    setData((d) => {
+      const sorted = [...d.experiences].sort((a, b) => a.order - b.order);
+      const index = sorted.findIndex((item) => item.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= sorted.length) return d;
+      [sorted[index], sorted[target]] = [sorted[target], sorted[index]];
+      return { ...d, experiences: sorted.map((item, position) => ({ ...item, order: position })) };
+    });
+  }, []);
+
+  const addLanguage = useCallback((entry: Omit<LanguageEntry, 'id'>) => {
+    setData((d) => ({
+      ...d,
+      languages: [...d.languages, {
+        ...entry,
+        id: uid(),
+        // Trimmed only. The script itself is never touched, so Devanagari,
+        // Tamil, Arabic and anything else round-trips byte-for-byte.
+        name: entry.name.trim() || 'Language',
+        visible: entry.visible !== false,
+        order: d.languages.length,
+      }],
+    }));
+  }, []);
+
+  const updateLanguage = useCallback((id: string, entry: Partial<LanguageEntry>) => {
+    setData((d) => ({ ...d, languages: d.languages.map((item) => (item.id === id ? { ...item, ...entry } : item)) }));
+  }, []);
+
+  const deleteLanguage = useCallback((id: string) => {
+    setData((d) => ({ ...d, languages: d.languages.filter((item) => item.id !== id) }));
+  }, []);
+
+  const moveLanguage = useCallback((id: string, direction: -1 | 1) => {
+    setData((d) => {
+      const sorted = [...d.languages].sort((a, b) => a.order - b.order);
+      const index = sorted.findIndex((item) => item.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= sorted.length) return d;
+      [sorted[index], sorted[target]] = [sorted[target], sorted[index]];
+      return { ...d, languages: sorted.map((item, position) => ({ ...item, order: position })) };
+    });
+  }, []);
+
   const setAdminPassword = useCallback(async (pw: string) => {
     await changeCloudAdminPassword(pw);
   }, []);
@@ -828,7 +965,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setHeroSettings, setSkillGroups, setPortfolioSettings,
     addPortfolioBlock, updatePortfolioBlock, deletePortfolioBlock, movePortfolioBlock, duplicatePortfolioBlock,
     setContactSettings, setFooterSettings, setSeoSettings, setAnimationSettings, setGameSettings, setChatbotSettings,
-    setSoundSettings, setLeaderboardSettings,
+    setSoundSettings, setLeaderboardSettings, setResumeSettings,
+    addEducation, updateEducation, deleteEducation, moveEducation,
+    addExperience, updateExperience, deleteExperience, moveExperience,
+    addLanguage, updateLanguage, deleteLanguage, moveLanguage,
     setAdminPassword, saveDraft, loadDraft, clearDraft,
   };
 
