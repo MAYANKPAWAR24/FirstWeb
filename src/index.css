@@ -1129,6 +1129,12 @@ html.custom-cursor-active textarea { cursor: text !important; }
 }
 
 .chat-panel {
+  /* The scene above is a full-viewport, click-through layer so the perspective
+     does not need to live on the panel itself. `pointer-events` is NOT
+     inherited in the way it looks: a parent set to `none` makes its children
+     unclickable too, so the panel has to opt back in explicitly. Without this
+     the entire chatbot is dead to the pointer while looking perfectly normal. */
+  pointer-events: auto;
   transform-style: preserve-3d;
   transform: rotateX(7deg) rotateY(-5deg) translateZ(0);
   transition: transform var(--dur-drawer) var(--ease-out-expo), box-shadow var(--dur-drawer) var(--ease-out-expo);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useEscapeKey, useFocusTrap } from '@/hooks/useFocusTrap';
 import { lockPageScroll } from '@/lib/utils';
@@ -63,9 +64,14 @@ export default function Overlay({  open,
 
   // The page behind must leave the accessibility tree, not just the visual one.
   //
-  // Ref-counted, because overlays compose: the admin panel contains a modal, and
-  // when that inner modal closed it used to strip `inert` back off <main>,
-  // silently re-enabling the public page behind a still-open admin panel.
+  // This is only safe because the panel is portalled to <body>: it is rendered
+  // inline by sections that live inside <main>, so marking <main> inert would
+  // otherwise make the dialog itself inert — unclickable and impossible to
+  // close. The portal puts the dialog outside everything that gets marked.
+  //
+  // Ref-counted because overlays compose: the admin panel contains a modal, and
+  // closing that inner modal must not re-enable the page behind a still-open
+  // dashboard.
   useEffect(() => {
     if (!open) return;
     const hidden = ['main', 'nav'].map((selector) => document.querySelector(selector))
@@ -78,11 +84,12 @@ export default function Overlay({  open,
     };
   }, [open]);
 
-  if (!open) return null;
+  // Nothing renders during SSR, where there is no document to portal into.
+  if (!open || typeof document === 'undefined') return null;
 
   const isSheet = variant === 'sheet';
 
-  return (
+  return createPortal(
     <div
       className={cls(
         'fixed inset-0 z-[9200] flex justify-center',
@@ -118,7 +125,8 @@ export default function Overlay({  open,
         )}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
