@@ -306,7 +306,7 @@ function ReadingModal({
       labelledBy="reader-title"
       variant="sheet"
       panelClassName="sm:max-w-2xl"
-      showClose={false}
+      showClose
     >
       <div className="relative z-10 shrink-0 border-b border-[var(--line)] bg-[var(--surface-2)] px-4 py-3 pr-14 sm:px-6">
         <div className="flex items-center gap-2.5">

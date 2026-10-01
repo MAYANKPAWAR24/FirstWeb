@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 import portfolioApi from './api/portfolio.js';
@@ -74,10 +74,54 @@ function prerenderPlugin(): Plugin {
   };
 }
 
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+/**
+ * Reads dotenv files WITHOUT variable expansion.
+ *
+ * Vite's `loadEnv` uses dotenv, which expands `$NAME` into a variable
+ * reference. A JSONBin master key in bcrypt format contains four such
+ * sequences (`$2a$10$…`), so expansion truncates it to the fragment after the
+ * last `$` and every authenticated request fails with a 401 from JSONBin —
+ * surfaced as a confusing 502 by our own error handler.
+ *
+ * Single-quoting the value does not help; dotenv expands inside quotes too.
+ * Nothing in this project needs expansion, so it is simply not done.
+ *
+ * Production is unaffected: Vercel injects real environment variables, so
+ * `process.env` is populated directly and no dotenv parsing happens at all.
+ */
+function readEnvFileRaw(file: string): Record<string, string> {
+  if (!existsSync(file)) return {};
+  const result: Record<string, string> = {};
+  for (const rawLine of readFileSync(file, 'utf8').split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const separator = line.indexOf('=');
+    if (separator === -1) continue;
+    const key = line.slice(0, separator).trim();
+    let value = line.slice(separator + 1).trim();
+    // Strip one layer of matching surrounding quotes, but leave `$` alone.
+    if ((value.startsWith('"') && value.endsWith('"') && value.length > 1)
+      || (value.startsWith("'") && value.endsWith("'") && value.length > 1)) {
+      value = value.slice(1, -1);
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
 export default defineConfig(({ mode, command }) => {
-  // Empty prefix: loads unprefixed keys (JSONBIN_*, PORTFOLIO_*), keeping every
-  // secret server-side. Nothing in `src/` reads `import.meta.env`.
-  Object.assign(process.env, loadEnv(mode, process.cwd(), ''));
+  // Unprefixed: every secret stays server-side. Nothing in `src/` reads
+  // `import.meta.env`.
+  Object.assign(
+    process.env,
+    readEnvFileRaw(resolve(process.cwd(), '.env')),
+    readEnvFileRaw(resolve(process.cwd(), `.env.${mode}`)),
+    readEnvFileRaw(resolve(process.cwd(), '.env.local')),
+    readEnvFileRaw(resolve(process.cwd(), `.env.${mode}.local`)),
+  );
 
   return {
     plugins: [

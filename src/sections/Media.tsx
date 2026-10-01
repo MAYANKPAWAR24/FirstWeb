@@ -205,15 +205,19 @@ function MediaCard({ item, onOpen }: { item: MediaItem; onOpen: () => void }) {
           // container and the real control sits in the title row. Its ::after
           // overlay makes the whole card clickable without nesting blocks
           // inside a button, which is invalid HTML.
-          <div className="card card-interactive card-sheen group flex h-full w-full flex-col overflow-hidden">
+          <div className="card card-interactive card-sheen group relative flex h-full w-full flex-col overflow-hidden">
             {body}
+            {/* The control has to be a real, visible element: an `sr-only`
+                button is clipped to 1px, so the card looks clickable and does
+                nothing. `card-action` stretches its ::after over the whole card
+                while the text itself stays hidden. */}
             <button
               type="button"
               onClick={onOpen}
               onMouseEnter={() => sounds.hover()}
-              className="card-action sr-only"
+              className="card-action absolute inset-0 z-10 h-full w-full cursor-pointer rounded-card"
             >
-              Open {item.title}
+              <span className="sr-only">Open {item.title}</span>
             </button>
           </div>
         )}
