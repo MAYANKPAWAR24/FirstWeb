@@ -142,7 +142,7 @@ cp .env.example .env.local
 | `PORTFOLIO_SESSION_SECRET` | for admin | Random string; signs the session cookie |
 | `PORTFOLIO_ADMIN_PASSWORD` | optional | Fallback password before a stored hash exists |
 | `PORTFOLIO_GUESTBOOK_AUTOAPPROVE` | no | Set `false` to hold entries for moderation |
-| `JSONBIN_SCORE_BIN_ID` | for shared scores | A **second, separate** bin for the global game leaderboard |
+
 
 Without the JSONBin pair the site still runs — it falls back to seed data plus `localStorage`, and the sync indicator reads *offline*.
 
@@ -174,9 +174,12 @@ Vercel picks up `api/portfolio.js` as a serverless function. Set the same enviro
 
 ## Notes on a few decisions
 
-**Scores live in a separate bin, not the content record.** A score is written every time anyone finishes a round. In the content bin, that would mean a visitor playing a game could silently overwrite an admin edit that had not synced yet. So shared scores go to `JSONBIN_SCORE_BIN_ID` — unrelated records, unrelated failure modes. If it is unset, boards quietly stay per-device rather than falling back to the content bin, because that fallback would reintroduce the exact collision.
+**Shared scores live in the content record under a `leaderboard` key**, so global boards work with the setup that already exists — no second bin, no extra configuration. Two rules make that safe:
 
-Entries are appended rather than replacing a ranked board. Without transactions, two simultaneous submissions will still cost one of them a write — but append-only means the loser loses only their own row, not the board's ordering. The client computes the top N from the full list, collapses repeat players to their best score, and refuses any score that does not strictly beat the current last place.
+1. A score write re-reads the record immediately before writing and changes exactly one key. It never writes back a stale copy of the content.
+2. An **admin save never overwrites the board.** It unions the stored board with whatever the browser sent, keyed by entry id. Without this, editing one poem while the panel was open would silently delete every score submitted in the meantime.
+
+Entries are appended rather than replacing a ranked board. JSONBin has no transactions, so two simultaneous submissions still cost one of them a write — but append-only means the loser loses only their own row, because every client computes the top N itself. Repeat players collapse to their best score, and a score is only accepted when it *strictly* beats the current last place, so ties cannot churn an existing row.
 
 **Sound is opt-in.** Every sound is synthesised from oscillators, so there are no audio files to fetch and no `AudioContext` is constructed until a visitor enables sound and interacts. The choice persists per device.
 

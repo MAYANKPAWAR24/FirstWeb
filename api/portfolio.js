@@ -136,43 +136,60 @@ async function jsonbin(method, record) {
 }
 
 /**
- * THE SHARED SCORE BIN
- * ====================
- * Kept in a SEPARATE bin from the content record, deliberately.
+ * SHARED SCORES
+ * =============
+ * Stored under a `leaderboard` key in the CONTENT bin by default, so it works
+ * with the setup that already exists and needs no second bin.
  *
- * A score submission happens every time anybody finishes a round. Putting those
- * writes in the content bin would mean every score did a full-record PUT, so
- * a visitor playing a game could silently overwrite an admin's edit that had
- * not synced yet. Two unrelated records, two unrelated failure modes.
+ * That is only safe because of two rules, and both matter:
  *
- * If no score bin is configured, submissions are rejected rather than quietly
- * falling back to the content bin — a fallback here would reintroduce exactly
- * the collision this avoids.
+ *  1. A score write re-reads the record immediately before writing and changes
+ *     exactly one key. It never sends a copy of the content it did not just
+ *     read, so it cannot roll the whole record back to a stale snapshot.
+ *
+ *  2. An ADMIN save never overwrites the board. It unions whatever is stored
+ *     with whatever the browser sent, keyed by entry id. Without this, editing
+ *     one poem in the admin would silently delete every score that landed while
+ *     the panel was open — the failure would be invisible and unrecoverable.
+ *
+ * `JSONBIN_SCORE_BIN_ID` remains as an opt-in override for anyone who wants the
+ * records physically separate. It is not required.
  */
 const MAX_STORED_SCORES = 300;
+const LEADERBOARD_KEY = 'leaderboard';
 const SCORE_GAMES = new Set([
   'tic-tac-toe', 'snake', 'memory', 'twenty-forty-eight',
   'rock-paper-scissors', 'reaction', 'pulse', 'math-sprint',
 ]);
 
-function scoreBinId() {
-  return process.env.JSONBIN_SCORE_BIN_ID || '';
+/**
+ * Where scores live. An optional second bin if configured, otherwise the
+ * content bin — which is the default, so the feature works with the setup the
+ * site already has.
+ */
+function scoreStoreId() {
+  return process.env.JSONBIN_SCORE_BIN_ID || process.env.JSONBIN_BIN_ID || '';
 }
 
+/** True when scores are isolated in their own bin. */
+function scoresAreIsolated() {
+  return Boolean(process.env.JSONBIN_SCORE_BIN_ID);
+}
+
+/** Read/write against the OPTIONAL isolated bin, used only when configured. */
 async function readScoreRecord() {
-  const binId = scoreBinId();
+  const binId = process.env.JSONBIN_SCORE_BIN_ID || '';
   if (!binId) return null;
   const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
     headers: { 'X-Master-Key': process.env.JSONBIN_MASTER_KEY || '' },
   });
   if (!response.ok) return null;
-  const result = await response.json();
-  const record = result?.record;
+  const record = (await response.json())?.record;
   return record && typeof record === 'object' && !Array.isArray(record) ? record : {};
 }
 
 async function writeScoreRecord(record) {
-  const binId = scoreBinId();
+  const binId = process.env.JSONBIN_SCORE_BIN_ID || '';
   if (!binId) return false;
   const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
     method: 'PUT',
@@ -185,6 +202,21 @@ async function writeScoreRecord(record) {
   return response.ok;
 }
 
+/** Merges two boards by entry id, keeping the higher score for a repeated id. */
+function unionBoards(stored, incoming) {
+  const byId = new Map();
+  for (const entry of [...(Array.isArray(stored) ? stored : []), ...(Array.isArray(incoming) ? incoming : [])]) {
+    if (!entry || typeof entry !== 'object') continue;
+    const id = typeof entry.id === 'string' ? entry.id : null;
+    if (!id) continue;
+    const existing = byId.get(id);
+    if (!existing || Number(entry.score) > Number(existing.score)) byId.set(id, entry);
+  }
+  return [...byId.values()]
+    .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')))
+    .slice(-MAX_STORED_SCORES);
+}
+
 /**
  * Appends, then prunes.
  *
@@ -194,13 +226,35 @@ async function writeScoreRecord(record) {
  * entire contribution to the board's ordering. Storing a flat recent list and
  * letting every client compute the top N means a lost write costs one row.
  */
+async function readScoreBoard() {
+  if (scoresAreIsolated()) {
+    const record = await readScoreRecord();
+    return Array.isArray(record?.scores) ? record.scores : [];
+  }
+  const record = await readRecord();
+  return Array.isArray(record[LEADERBOARD_KEY]) ? record[LEADERBOARD_KEY] : [];
+}
+
+/**
+ * Appends to the board with a read-modify-write against a freshly read record.
+ *
+ * Append-only is deliberate: JSONBin has no transactions, so two simultaneous
+ * submissions will still cost one of them a write. Appending to a flat recent
+ * list means the loser loses only their own row, because every client computes
+ * the ranking itself. Rewriting a ranked board per submission would instead
+ * lose the loser's entire contribution to the ordering.
+ */
 async function appendScore(entry) {
-  const record = (await readScoreRecord()) ?? {};
-  const existing = Array.isArray(record.scores) ? record.scores : [];
-  const next = [...existing, entry]
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    .slice(-MAX_STORED_SCORES);
-  await writeScoreRecord({ scores: next });
+  const next = unionBoards(await readScoreBoard(), [entry]);
+  if (scoresAreIsolated()) {
+    await writeScoreRecord({ scores: next });
+    return next;
+  }
+  // Re-read the content record and change exactly one key. Never write back a
+  // copy of the content taken before this call.
+  const record = await readRecord();
+  record[LEADERBOARD_KEY] = next;
+  await writeRecord(record);
   return next;
 }
 
@@ -353,19 +407,12 @@ export default async function handler(req, res) {
 
       if (action === 'scores') {
         // Public read. No session: this is the whole point of a shared board.
-        const record = await readScoreRecord();
-        if (!record) {
-          return send(res, 503, {
-            error: 'Shared scores are not configured. Set JSONBIN_SCORE_BIN_ID to enable them.',
-          });
-        }
-        const list = Array.isArray(record.scores) ? record.scores : [];
-        return send(res, 200, { scores: list });
+        return send(res, 200, { scores: await readScoreBoard() });
       }
 
       if (action === 'score') {
         const entry_ = { game, name, score, id };
-        if (!scoreBinId()) {
+        if (!scoreStoreId()) {
           return send(res, 503, { error: 'Shared scores are not configured.' });
         }
         if (!rateLimit(`score:${clientKey(req)}`, RATE_LIMITS.score)) {
@@ -476,10 +523,19 @@ export default async function handler(req, res) {
       // PUT allows, and `__adminAuth` is always carried over from the stored
       // hash rather than anything the client sent.
       const previous = await readRecord();
+      const storedBoard = Array.isArray(previous[LEADERBOARD_KEY]) ? previous[LEADERBOARD_KEY] : [];
       const record = {
         ...withoutAuth(body.data),
         sectionOrder: validOrder(body.sectionOrder),
         sectionVisibility: validVisibility(body.sectionVisibility),
+        // An admin save must never destroy the leaderboard. The browser sent
+        // whatever it loaded when the panel opened, so any score submitted in
+        // the meantime exists only on the server; unioning keeps both. This is
+        // the one direction that really matters, because losing a poem to a
+        // game score is unrecoverable, while losing a score is just a replay.
+        ...(storedBoard.length > 0 || Array.isArray(body.data?.[LEADERBOARD_KEY])
+          ? { [LEADERBOARD_KEY]: unionBoards(storedBoard, body.data?.[LEADERBOARD_KEY]) }
+          : {}),
         ...(previous.__adminAuth ? { __adminAuth: previous.__adminAuth } : {}),
       };
       await writeRecord(record);
