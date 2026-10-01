@@ -166,11 +166,35 @@ export default function GamesPanel() {
               checked={board.enabled}
               onChange={(enabled) => patchBoard('enabled', enabled)}
             />
+            <Select
+              label="Board source"
+              value={board.mode}
+              options={[
+                { value: 'global', label: 'Global — one shared board for every visitor' },
+                { value: 'both', label: 'Global + this device' },
+                { value: 'local', label: 'This device only — nothing uploaded' },
+              ]}
+              hint="Global needs a separate bin: set JSONBIN_SCORE_BIN_ID in Vercel. Until you do, submissions are rejected rather than written to the content bin."
+              onChange={(value) => patchBoard('mode', value as LeaderboardSettings['mode'])}
+            />
+            {board.mode !== 'local' && (
+              <p className="rounded-card border border-[rgba(10,130,189,0.22)] bg-[var(--accent-soft)] px-3 py-2.5 text-[12px] leading-relaxed text-[var(--ink-2)]">
+                Every visitor will see the same top {board.limit}. A score is only saved when it
+                beats the current last place; ties do not qualify.
+              </p>
+            )}
             <Toggle
-              label="Show local scores"
-              hint="Include the scores stored on the visitor's device alongside official ones."
+              label="Show local scores too"
+              hint="Include this device's own runs alongside the shared board."
               checked={board.showLocal}
               onChange={(showLocal) => patchBoard('showLocal', showLocal)}
+            />
+            <Field
+              label="Minimum score to accept"
+              type="number"
+              value={String(board.minimumScore)}
+              onChange={(value) => patchBoard('minimumScore', Math.max(0, Number(value) || 0))}
+              hint="Guards the shared board against a broken run or a spam script. 0 accepts any score above zero."
             />
             <Toggle
               label="Require a player name"

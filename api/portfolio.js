@@ -50,6 +50,9 @@ const RATE_LIMITS = {
   guestbook: 5,
   visitor: 30,
   login: 12,
+  // A finished round is one write. 20/minute leaves room for a fast player
+  // while stopping a script from filling the shared board.
+  score: 20,
 };
 const rateBuckets = new Map();
 
@@ -130,6 +133,92 @@ async function jsonbin(method, record) {
   if (!response.ok) throw new Error(`JSONBIN_HTTP_${response.status}`);
   const result = await response.json();
   return result.record;
+}
+
+/**
+ * THE SHARED SCORE BIN
+ * ====================
+ * Kept in a SEPARATE bin from the content record, deliberately.
+ *
+ * A score submission happens every time anybody finishes a round. Putting those
+ * writes in the content bin would mean every score did a full-record PUT, so
+ * a visitor playing a game could silently overwrite an admin's edit that had
+ * not synced yet. Two unrelated records, two unrelated failure modes.
+ *
+ * If no score bin is configured, submissions are rejected rather than quietly
+ * falling back to the content bin — a fallback here would reintroduce exactly
+ * the collision this avoids.
+ */
+const MAX_STORED_SCORES = 300;
+const SCORE_GAMES = new Set([
+  'tic-tac-toe', 'snake', 'memory', 'twenty-forty-eight',
+  'rock-paper-scissors', 'reaction', 'pulse', 'math-sprint',
+]);
+
+function scoreBinId() {
+  return process.env.JSONBIN_SCORE_BIN_ID || '';
+}
+
+async function readScoreRecord() {
+  const binId = scoreBinId();
+  if (!binId) return null;
+  const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+    headers: { 'X-Master-Key': process.env.JSONBIN_MASTER_KEY || '' },
+  });
+  if (!response.ok) return null;
+  const result = await response.json();
+  const record = result?.record;
+  return record && typeof record === 'object' && !Array.isArray(record) ? record : {};
+}
+
+async function writeScoreRecord(record) {
+  const binId = scoreBinId();
+  if (!binId) return false;
+  const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+    method: 'PUT',
+    headers: {
+      'X-Master-Key': process.env.JSONBIN_MASTER_KEY || '',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(record),
+  });
+  return response.ok;
+}
+
+/**
+ * Appends, then prunes.
+ *
+ * Append-only is what makes this safe without transactions. If two people
+ * submit at the same instant, one write is lost — but only that ONE entry,
+ * because a read-modify-write of a full ranked board would lose the loser's
+ * entire contribution to the board's ordering. Storing a flat recent list and
+ * letting every client compute the top N means a lost write costs one row.
+ */
+async function appendScore(entry) {
+  const record = (await readScoreRecord()) ?? {};
+  const existing = Array.isArray(record.scores) ? record.scores : [];
+  const next = [...existing, entry]
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+    .slice(-MAX_STORED_SCORES);
+  await writeScoreRecord({ scores: next });
+  return next;
+}
+
+function sanitizeScoreEntry(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const game = typeof payload.game === 'string' ? payload.game : '';
+  if (!SCORE_GAMES.has(game)) return null;
+  const name = sanitizeGuestbookText(payload.name, 16);
+  if (name.length < 2) return null;
+  const score = Number(payload.score);
+  if (!Number.isFinite(score) || score <= 0 || score > 1_000_000) return null;
+  return {
+    id: typeof payload.id === 'string' && payload.id.length <= 64 ? payload.id : randomUUID(),
+    game,
+    name,
+    score: Math.trunc(score),
+    date: new Date().toISOString(),
+  };
 }
 
 async function readRecord() {
@@ -240,7 +329,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { action, password, newPassword, entry, backup } = req.body ?? {};
+      const { action, password, newPassword, entry: guestbookBody, score: scoreBody, game, name, id, score, backup } = req.body ?? {};
 
       if (action === 'login') {
         if (!rateLimit(`login:${clientKey(req)}`, RATE_LIMITS.login)) {
@@ -260,6 +349,32 @@ export default async function handler(req, res) {
         }
         setSessionCookie(res);
         return send(res, 200, { ok: true });
+      }
+
+      if (action === 'scores') {
+        // Public read. No session: this is the whole point of a shared board.
+        const record = await readScoreRecord();
+        if (!record) {
+          return send(res, 503, {
+            error: 'Shared scores are not configured. Set JSONBIN_SCORE_BIN_ID to enable them.',
+          });
+        }
+        const list = Array.isArray(record.scores) ? record.scores : [];
+        return send(res, 200, { scores: list });
+      }
+
+      if (action === 'score') {
+        const entry_ = { game, name, score, id };
+        if (!scoreBinId()) {
+          return send(res, 503, { error: 'Shared scores are not configured.' });
+        }
+        if (!rateLimit(`score:${clientKey(req)}`, RATE_LIMITS.score)) {
+          return send(res, 429, { error: 'Too many scores from this device. Try again in a minute.' });
+        }
+        const entry = sanitizeScoreEntry(entry_);
+        if (!entry) return send(res, 400, { error: 'Invalid score' });
+        await appendScore(entry);
+        return send(res, 200, { ok: true, score: entry });
       }
 
       if (action === 'logout') {
@@ -283,23 +398,23 @@ export default async function handler(req, res) {
           return send(res, 429, { error: 'Too many messages from this device. Try again in a minute.' });
         }
         // Honeypot: a real browser leaves this hidden field empty.
-        if (entry && typeof entry.website === 'string' && entry.website.trim()) {
-          return send(res, 200, { entry: { id: entry.id ?? randomUUID(), name: '', message: '', date: new Date().toISOString(), avatar: '', approved: false } });
+        if (guestbookBody && typeof guestbookBody.website === 'string' && guestbookBody.website.trim()) {
+          return send(res, 200, { entry: { id: guestbookBody.id ?? randomUUID(), name: '', message: '', date: new Date().toISOString(), avatar: '', approved: false } });
         }
-        if (!entry || typeof entry.name !== 'string' || typeof entry.message !== 'string') {
+        if (!guestbookBody || typeof guestbookBody.name !== 'string' || typeof guestbookBody.message !== 'string') {
           return send(res, 400, { error: 'Invalid guestbook entry' });
         }
-        const name = sanitizeGuestbookText(entry.name, GUESTBOOK_NAME_MAX_LENGTH);
-        const message = sanitizeGuestbookText(entry.message, GUESTBOOK_MAX_LENGTH);
-        if (!name || !message) return send(res, 400, { error: 'Name and message are required' });
+        const guestName = sanitizeGuestbookText(guestbookBody.name, GUESTBOOK_NAME_MAX_LENGTH);
+        const message = sanitizeGuestbookText(guestbookBody.message, GUESTBOOK_MAX_LENGTH);
+        if (!guestName || !message) return send(res, 400, { error: 'Name and message are required' });
 
         const record = await readRecord();
         const savedEntry = {
-          id: typeof entry.id === 'string' ? entry.id : randomUUID(),
-          name,
+          id: typeof guestbookBody.id === 'string' ? guestbookBody.id : randomUUID(),
+          name: guestName,
           message,
           date: new Date().toISOString(),
-          avatar: name.charAt(0).toUpperCase(),
+          avatar: guestName.charAt(0).toUpperCase(),
           approved: guestbookApprovalDefault(),
         };
         record.guestbook = [savedEntry, ...(Array.isArray(record.guestbook) ? record.guestbook : [])];

@@ -27,6 +27,7 @@ import {
   type SkillGroupId,
   type SkillGroups,
   type SoundSettings,
+  type LeaderboardMode,
   type LeaderboardSettings,
   type OfficialScore,
   type EducationEntry,
@@ -430,6 +431,13 @@ export function normalizeLeaderboardSettings(
     requireName: boolKey(source, 'requireName', fallback.requireName),
     namePlaceholder: textKey(source, 'namePlaceholder', fallback.namePlaceholder),
     showLocal: boolKey(source, 'showLocal', fallback.showLocal),
+    // An old record has no `mode`. Falling back to `local` is the safe choice:
+    // it is the previous behaviour, so nothing starts uploading until the admin
+    // explicitly opts in.
+    mode: asOneOf(source.mode, LEADERBOARD_MODES, fallback.mode),
+    minimumScore: Number.isFinite(Number(source.minimumScore))
+      ? Math.max(0, Math.trunc(Number(source.minimumScore)))
+      : fallback.minimumScore,
     officialEntries,
   };
 }
@@ -581,6 +589,7 @@ const CHATBOT_CATEGORIES: ChatbotCategory[] = [
   'contact',
   'work',
 ];
+const LEADERBOARD_MODES: LeaderboardMode[] = ['local', 'global', 'both'];
 const CHATBOT_TONES: ChatbotTone[] = ['professional', 'warm', 'playful'];
 const CHATBOT_LANGUAGES: ChatbotLanguage[] = ['english', 'hinglish'];
 const CHATBOT_FALLBACKS: ChatbotFallbackStyle[] = ['helpful', 'witty', 'minimal'];

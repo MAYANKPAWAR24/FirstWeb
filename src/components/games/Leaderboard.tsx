@@ -3,10 +3,11 @@ import { Crown, Medal, Trophy, UserRound } from 'lucide-react';
 import { sounds } from '@/lib/sound';
 import { useToast } from '@/lib/ToastContext';
 import {
-  isValidPlayerName, loadPlayerName, mergeBoards, readScores,
-  sanitizePlayerName, savePlayerName, submitScore, type ScoreEntry,
+  fetchGlobalScores, isValidPlayerName, loadPlayerName, mergeBoards,
+  qualifies, rankGlobalScores, readScores, sanitizePlayerName, savePlayerName,
+  submitGlobalScore, submitScore, type ScoreEntry,
 } from '@/lib/gameScores';
-import type { LeaderboardSettings, MiniGameKind, OfficialScore } from '@/lib/types';
+import type { GlobalScore, LeaderboardSettings, MiniGameKind, OfficialScore } from '@/lib/types';
 
 interface LeaderboardProps {
   game: MiniGameKind;
@@ -31,6 +32,7 @@ export default function Leaderboard({
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState('');
   const [rows, setRows] = useState<ScoreEntry[]>([]);
+  const [global, setGlobal] = useState<GlobalScore[]>([]);
   const [lastRank, setLastRank] = useState(0);
 
   const official = useMemo<ScoreEntry[]>(
@@ -40,26 +42,83 @@ export default function Leaderboard({
     [settings.officialEntries, game],
   );
 
-  const load = useCallback(() => {
-    const local = settings.showLocal ? readScores(game) : [];
-    setRows(mergeBoards(local, official, settings.limit));
-  }, [game, official, settings.limit, settings.showLocal]);
+  const wantsGlobal = settings.mode === 'global' || settings.mode === 'both';
+  const wantsLocal = settings.mode === 'local' || settings.mode === 'both';
 
-  // Submission and re-read happen together, so the board is never shown stale
-  // for a beat after a round ends.
-  useEffect(() => {
+  const load = useCallback(() => {
+    const local = wantsLocal && settings.showLocal ? readScores(game) : [];
+    setRows(mergeBoards(local, official, settings.limit));
+  }, [game, official, settings.limit, settings.showLocal, wantsLocal]);
+
+  /**
+   * The shared board is fetched separately and merged in, because it is a
+   * network read and must never block the local board from rendering. If the
+   * request fails the site still shows a working leaderboard, just without the
+   * shared rows.
+   */
+  const refreshGlobal = useCallback(async () => {
+    if (!wantsGlobal) { setGlobal([]); return; }
+    const shared = await fetchGlobalScores();
+    setGlobal(shared);
+  }, [wantsGlobal]);
+
+  useEffect(() => { void refreshGlobal(); }, [refreshGlobal, refreshKey]);
+
+  /**
+   * Save a finished round.
+   *
+   * The rule the brief asked for: a score is only kept if it would place in the
+   * board. Ties do not qualify — otherwise an existing top-10 name could
+   * rewrite its own row on every replay.
+   */
+  const copy = useMemo(() => ({
+    newTop: 'New top score.',
+    notQualified: `That score did not place in the top ${settings.limit}. Play again to beat it.`,
+  }), [settings.limit]);
+
+  /**
+   * The rows actually displayed: the shared board first when it is enabled,
+   * this device's own runs alongside it, and the admin's curated entries on
+   * top of everything.
+   */
+  const displayed = useMemo(() => {
+    const shared = rankGlobalScores(global, game, settings.limit);
+    const local = wantsLocal && settings.showLocal ? readScores(game) : [];
+    return mergeBoards(mergeBoards(local, shared, settings.limit), official, settings.limit);
+  }, [game, wantsLocal, settings.showLocal, settings.limit, global, official]);
+
+  const save = useCallback(async () => {
     if (refreshKey === 0 || latestScore <= 0 || !settings.enabled) { load(); return; }
+
     const playerName = loadPlayerName();
     if (settings.requireName && !isValidPlayerName(playerName)) {
-      // Nothing is written and nothing is announced as a failure: the player
-      // simply plays anonymously.
       setLastRank(0);
       load();
       return;
     }
-    setLastRank(submitScore(game, playerName || 'Player', latestScore));
+
+    // The board the score has to beat is the one being displayed.
+    const shared = wantsGlobal
+      ? rankGlobalScores(global.length > 0 ? global : await fetchGlobalScores(), game, settings.limit)
+      : [];
+    const localBoard = wantsLocal ? readScores(game) : [];
+    const board = mergeBoards(localBoard, shared, settings.limit);
+
+    const makesIt = qualifies(latestScore, board, settings.limit, settings.minimumScore);
+    setLastRank(makesIt ? 0 : -1);
+    if (!makesIt) { load(); return; }
+
+    if (wantsLocal) {
+      setLastRank(submitScore(game, playerName || 'Player', latestScore));
+    }
+    if (wantsGlobal) {
+      const sent = await submitGlobalScore(game, playerName || 'Player', latestScore);
+      if (sent) await refreshGlobal();
+    }
     load();
-  }, [refreshKey, latestScore, settings.enabled, settings.requireName, game, load]);
+  }, [refreshKey, latestScore, settings, game, wantsGlobal, wantsLocal, global, load, refreshGlobal]);
+
+  useEffect(() => { void save(); }, [save]);
 
 
   // A name is only ever *requested*, never demanded: a score still counts
@@ -67,6 +126,7 @@ export default function Leaderboard({
   useEffect(() => { setName(loadPlayerName()); }, []);
 
   if (!settings.enabled) return null;
+
 
   const handleSaveName = () => {
     if (!isValidPlayerName(name)) {
@@ -136,13 +196,18 @@ export default function Leaderboard({
         </p>
       )}
 
+      {lastRank === -1 && (
+        <p role="status" className="mt-3 text-[13px] font-medium text-[var(--muted)]">
+          {copy.notQualified}
+        </p>
+      )}
       {lastRank > 0 && (
         <p role="status" className="mt-3 text-[13px] font-medium text-[var(--jade)]">
-          {lastRank === 1 ? 'New top score.' : `Placed ${RANK_LABELS[lastRank - 1]} on this device.`}
+          {lastRank === 1 ? copy.newTop : `${RANK_LABELS[lastRank - 1]} place.`}
         </p>
       )}
 
-      {rows.length === 0 ? (
+      {displayed.length === 0 ? (
         <div className="mt-4">
           <p className="rounded-card border border-dashed border-[var(--line-strong)] bg-[var(--surface-2)] px-4 py-5 text-center text-[13px] leading-relaxed text-[var(--muted)]">
             No scores yet. Finish a round and yours will appear here.
@@ -150,7 +215,7 @@ export default function Leaderboard({
         </div>
       ) : (
         <ol className="mt-4 space-y-1.5">
-          {rows.map((row, index) => (
+          {displayed.map((row, index) => (
             <li
               key={`${row.name}-${index}`}
               className={[
@@ -182,7 +247,11 @@ export default function Leaderboard({
                     {sanitizePlayerName(row.name)}
                   </span>
                   {!row.local && (
-                    <span className="chip chip-accent flex-none px-1.5 py-0 text-[9px]">Official</span>
+                    <span className="chip chip-accent flex-none px-1.5 py-0 text-[9px]">
+                      {global.some((entry) => entry.game === game && entry.name === row.name)
+                        ? 'Global'
+                        : 'Official'}
+                    </span>
                   )}
                 </span>
                 <span className="sr-only">{RANK_LABELS[index]} place.</span>

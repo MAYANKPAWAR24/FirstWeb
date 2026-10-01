@@ -369,6 +369,16 @@ export interface OfficialScore {
   date: string;
 }
 
+/**
+ * Where the board comes from.
+ *
+ *  `local`  — this device only. Nothing leaves the browser.
+ *  `global` — one shared board, written to a separate JSONBin bin so a score
+ *             submission can never collide with a content save.
+ *  `both`   — the shared board plus this device's own runs, merged.
+ */
+export type LeaderboardMode = 'local' | 'global' | 'both';
+
 export interface LeaderboardSettings {
   enabled: boolean;
   title: string;
@@ -377,9 +387,25 @@ export interface LeaderboardSettings {
   /** Require a name before a score counts. */
   requireName: boolean;
   namePlaceholder: string;
-  /** Show the local board alongside, or curated entries only. */
+  /** Show this device's own board alongside the shared one. */
   showLocal: boolean;
+  mode: LeaderboardMode;
+  /**
+   * Reject submissions below this. Stops a broken game loop, or a deliberate
+   * spam run, from filling the shared board with nonsense. 0 disables it.
+   */
+  minimumScore: number;
   officialEntries: OfficialScore[];
+}
+
+/** One entry as it travels to and from the shared bin. */
+export interface GlobalScore {
+  id: string;
+  game: MiniGameKind;
+  name: string;
+  score: number;
+  /** ISO date, for recency and for de-duplication. */
+  date: string;
 }
 
 /* ------------------------------------------------------------------ *
