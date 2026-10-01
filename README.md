@@ -143,6 +143,7 @@ cp .env.example .env.local
 | `PORTFOLIO_ADMIN_PASSWORD` | optional | Fallback password before a stored hash exists |
 | `PORTFOLIO_GUESTBOOK_AUTOAPPROVE` | no | Set `false` to hold entries for moderation |
 
+
 Without the JSONBin pair the site still runs — it falls back to seed data plus `localStorage`, and the sync indicator reads *offline*.
 
 ### 2. Deploy
@@ -173,7 +174,12 @@ Vercel picks up `api/portfolio.js` as a serverless function. Set the same enviro
 
 ## Notes on a few decisions
 
-**Scores are not in the cloud.** Visitor leaderboards live in `localStorage`. They are not admin content — putting them in the shared record would mean every visitor overwrote every other, bloat the one file the admin edits, and worsen guestbook write contention. The admin curates a separate *official* board, which is genuinely content.
+**Shared scores live in the content record under a `leaderboard` key**, so global boards work with the setup that already exists — no second bin, no extra configuration. Two rules make that safe:
+
+1. A score write re-reads the record immediately before writing and changes exactly one key. It never writes back a stale copy of the content.
+2. An **admin save never overwrites the board.** It unions the stored board with whatever the browser sent, keyed by entry id. Without this, editing one poem while the panel was open would silently delete every score submitted in the meantime.
+
+Entries are appended rather than replacing a ranked board. JSONBin has no transactions, so two simultaneous submissions still cost one of them a write — but append-only means the loser loses only their own row, because every client computes the top N itself. Repeat players collapse to their best score, and a score is only accepted when it *strictly* beats the current last place, so ties cannot churn an existing row.
 
 **Sound is opt-in.** Every sound is synthesised from oscillators, so there are no audio files to fetch and no `AudioContext` is constructed until a visitor enables sound and interacts. The choice persists per device.
 

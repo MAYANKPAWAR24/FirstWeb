@@ -1,19 +1,22 @@
-import type { MiniGameKind } from './types';
+import { uid } from './utils';
+import type { GlobalScore, MiniGameKind } from './types';
 
 /**
- * Player name and high-score storage.
+ * Player names and high scores.
  *
- * WHY THIS IS NOT IN JSONBIN
- * =========================
- * The cloud bin is the admin's content record. Visitor scores are not content:
- * writing them there would mean every visitor's score overwrote every other
- * visitor's, would bloat the one record the admin edits, and would make the
- * guestbook write path even more of a contention hotspot. Local storage is the
- * correct home for per-device scores — it is also faster, works offline, and
- * cannot be abused to inflate a global board.
+ * TWO STORES, TWO JOBS
+ * ====================
+ *  local   this device only. Always works, never touches the network.
+ *  global  one shared board in a SEPARATE JSONBin bin, read by every visitor.
  *
- * The admin can still curate an *official* board, which does live in JSONBin,
- * because that is genuinely content. Both boards can be shown together.
+ * The shared board lives in its own bin rather than the content record on
+ * purpose. A score is written every time anyone finishes a round; if those
+ * writes shared a record with the admin's content, a visitor playing a game
+ * could silently overwrite an edit that had not synced yet. Unrelated records
+ * means unrelated failure modes.
+ *
+ * Both are still kept. The local board is the offline fallback, and a player
+ * who has not enabled sharing still sees their own history.
  */
 
 const NAME_KEY = 'portfolio_player_name_v1';
@@ -209,4 +212,119 @@ export function mergeBoards(
     .sort((a, b) => (Number(b.local === false) - Number(a.local === false)) || b.score - a.score
       || a.date.localeCompare(b.date))
     .slice(0, Math.max(1, Math.min(limit, MAX_ENTRIES)));
+}
+
+/* ------------------------------------------------------------------ *
+ * The shared board
+ * ------------------------------------------------------------------ */
+
+const GLOBAL_FETCH_TIMEOUT_MS = 6000;
+
+/** Raw shared entries, newest first. Empty when unavailable. */
+export async function fetchGlobalScores(signal?: AbortSignal): Promise<GlobalScore[]> {
+  if (typeof fetch !== 'function') return [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GLOBAL_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch('/api/portfolio', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'scores' }),
+      signal: signal ?? controller.signal,
+    });
+    if (!response.ok) return [];
+    const result = await response.json() as { scores?: unknown };
+    if (!Array.isArray(result.scores)) return [];
+    return result.scores
+      .filter((entry): entry is GlobalScore => Boolean(entry) && typeof entry === 'object')
+      .map((entry) => ({
+        id: String(entry.id ?? ''),
+        game: entry.game as MiniGameKind,
+        name: sanitizePlayerName(String(entry.name ?? '')),
+        score: Number.isFinite(Number(entry.score)) ? Math.trunc(Number(entry.score)) : 0,
+        date: typeof entry.date === 'string' ? entry.date : '',
+      }))
+      .filter((entry) => entry.name.length >= 2 && entry.score > 0);
+  } catch {
+    // Offline, rate-limited or misconfigured. The local board still renders,
+    // so this is a degraded result rather than an error state.
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Sends a score to the shared board.
+ *
+ * Only called when the score actually qualifies, so a run that would not place
+ * never touches the network.
+ */
+export async function submitGlobalScore(
+  game: MiniGameKind,
+  name: string,
+  score: number,
+): Promise<boolean> {
+  const cleanName = sanitizePlayerName(name);
+  const cleanScore = Math.trunc(Number(score) || 0);
+  if (cleanName.length < 2 || cleanScore < 1) return false;
+  try {
+    const response = await fetch('/api/portfolio', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'score', id: uid(), game, name: cleanName, score: cleanScore }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reduces the shared list to one player's best score per name.
+ *
+ * Without this, one determined player could fill all ten rows by replaying the
+ * same game, and the board would stop being a leaderboard.
+ */
+export function rankGlobalScores(
+  scores: GlobalScore[],
+  game: MiniGameKind,
+  limit: number,
+): ScoreEntry[] {
+  const best = new Map<string, ScoreEntry>();
+  scores
+    .filter((entry) => entry.game === game)
+    .forEach((entry) => {
+      const key = entry.name.toLowerCase();
+      const existing = best.get(key);
+      if (existing) {
+        if (entry.score > existing.score) {
+          best.set(key, { ...entry, local: false });
+        }
+        return;
+      }
+      best.set(key, { name: entry.name, score: entry.score, date: entry.date, local: false });
+    });
+  return [...best.values()]
+    .sort((a, b) => b.score - a.score || a.date.localeCompare(b.date))
+    .slice(0, Math.max(1, Math.min(limit, MAX_ENTRIES)))
+    .map((entry) => ({ ...entry, local: false }));
+}
+
+/** The score that would put an entry in last place, or 0 for an empty board. */
+export function cutoffScore(entries: ScoreEntry[], limit: number): number {
+  if (entries.length < limit) return 0;
+  return entries[Math.min(entries.length, limit) - 1]?.score ?? 0;
+}
+
+/** Does this score make the board? Strictly greater than the 10th place. */
+export function qualifies(score: number, entries: ScoreEntry[], limit: number, minimumScore: number): boolean {
+  if (score < minimumScore) return false;
+  const cutoff = cutoffScore(entries, limit);
+  // A board that is not full yet always accepts; once full, ties do not count,
+  // which is what stops an existing top-10 name from churning its own row.
+  if (cutoff === 0) return true;
+  return score > cutoff;
 }

@@ -446,10 +446,15 @@ Until the day a woman came in with a jar that glowed a color he had never seen b
   leaderboardSettings: {
     enabled: true,
     title: 'Top Scores',
-    limit: 5,
+    limit: 10,
     requireName: false,
     namePlaceholder: 'Your name',
     showLocal: true,
+    // `global` means one shared board every visitor sees. It needs a separate
+    // JSONBin bin — see `JSONBIN_SCORE_BIN_ID` in the setup notes.
+    mode: 'global',
+    // Guards the shared board against a broken game loop or a spam run.
+    minimumScore: 1,
     // Curated by the site owner. Empty by default so nothing implies a score
     // that was never actually achieved.
     officialEntries: [],

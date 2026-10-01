@@ -50,6 +50,9 @@ const RATE_LIMITS = {
   guestbook: 5,
   visitor: 30,
   login: 12,
+  // A finished round is one write. 20/minute leaves room for a fast player
+  // while stopping a script from filling the shared board.
+  score: 20,
 };
 const rateBuckets = new Map();
 
@@ -130,6 +133,146 @@ async function jsonbin(method, record) {
   if (!response.ok) throw new Error(`JSONBIN_HTTP_${response.status}`);
   const result = await response.json();
   return result.record;
+}
+
+/**
+ * SHARED SCORES
+ * =============
+ * Stored under a `leaderboard` key in the CONTENT bin by default, so it works
+ * with the setup that already exists and needs no second bin.
+ *
+ * That is only safe because of two rules, and both matter:
+ *
+ *  1. A score write re-reads the record immediately before writing and changes
+ *     exactly one key. It never sends a copy of the content it did not just
+ *     read, so it cannot roll the whole record back to a stale snapshot.
+ *
+ *  2. An ADMIN save never overwrites the board. It unions whatever is stored
+ *     with whatever the browser sent, keyed by entry id. Without this, editing
+ *     one poem in the admin would silently delete every score that landed while
+ *     the panel was open — the failure would be invisible and unrecoverable.
+ *
+ * `JSONBIN_SCORE_BIN_ID` remains as an opt-in override for anyone who wants the
+ * records physically separate. It is not required.
+ */
+const MAX_STORED_SCORES = 300;
+const LEADERBOARD_KEY = 'leaderboard';
+const SCORE_GAMES = new Set([
+  'tic-tac-toe', 'snake', 'memory', 'twenty-forty-eight',
+  'rock-paper-scissors', 'reaction', 'pulse', 'math-sprint',
+]);
+
+/**
+ * Where scores live. An optional second bin if configured, otherwise the
+ * content bin — which is the default, so the feature works with the setup the
+ * site already has.
+ */
+function scoreStoreId() {
+  return process.env.JSONBIN_SCORE_BIN_ID || process.env.JSONBIN_BIN_ID || '';
+}
+
+/** True when scores are isolated in their own bin. */
+function scoresAreIsolated() {
+  return Boolean(process.env.JSONBIN_SCORE_BIN_ID);
+}
+
+/** Read/write against the OPTIONAL isolated bin, used only when configured. */
+async function readScoreRecord() {
+  const binId = process.env.JSONBIN_SCORE_BIN_ID || '';
+  if (!binId) return null;
+  const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+    headers: { 'X-Master-Key': process.env.JSONBIN_MASTER_KEY || '' },
+  });
+  if (!response.ok) return null;
+  const record = (await response.json())?.record;
+  return record && typeof record === 'object' && !Array.isArray(record) ? record : {};
+}
+
+async function writeScoreRecord(record) {
+  const binId = process.env.JSONBIN_SCORE_BIN_ID || '';
+  if (!binId) return false;
+  const response = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+    method: 'PUT',
+    headers: {
+      'X-Master-Key': process.env.JSONBIN_MASTER_KEY || '',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(record),
+  });
+  return response.ok;
+}
+
+/** Merges two boards by entry id, keeping the higher score for a repeated id. */
+function unionBoards(stored, incoming) {
+  const byId = new Map();
+  for (const entry of [...(Array.isArray(stored) ? stored : []), ...(Array.isArray(incoming) ? incoming : [])]) {
+    if (!entry || typeof entry !== 'object') continue;
+    const id = typeof entry.id === 'string' ? entry.id : null;
+    if (!id) continue;
+    const existing = byId.get(id);
+    if (!existing || Number(entry.score) > Number(existing.score)) byId.set(id, entry);
+  }
+  return [...byId.values()]
+    .sort((a, b) => String(a.date ?? '').localeCompare(String(b.date ?? '')))
+    .slice(-MAX_STORED_SCORES);
+}
+
+/**
+ * Appends, then prunes.
+ *
+ * Append-only is what makes this safe without transactions. If two people
+ * submit at the same instant, one write is lost — but only that ONE entry,
+ * because a read-modify-write of a full ranked board would lose the loser's
+ * entire contribution to the board's ordering. Storing a flat recent list and
+ * letting every client compute the top N means a lost write costs one row.
+ */
+async function readScoreBoard() {
+  if (scoresAreIsolated()) {
+    const record = await readScoreRecord();
+    return Array.isArray(record?.scores) ? record.scores : [];
+  }
+  const record = await readRecord();
+  return Array.isArray(record[LEADERBOARD_KEY]) ? record[LEADERBOARD_KEY] : [];
+}
+
+/**
+ * Appends to the board with a read-modify-write against a freshly read record.
+ *
+ * Append-only is deliberate: JSONBin has no transactions, so two simultaneous
+ * submissions will still cost one of them a write. Appending to a flat recent
+ * list means the loser loses only their own row, because every client computes
+ * the ranking itself. Rewriting a ranked board per submission would instead
+ * lose the loser's entire contribution to the ordering.
+ */
+async function appendScore(entry) {
+  const next = unionBoards(await readScoreBoard(), [entry]);
+  if (scoresAreIsolated()) {
+    await writeScoreRecord({ scores: next });
+    return next;
+  }
+  // Re-read the content record and change exactly one key. Never write back a
+  // copy of the content taken before this call.
+  const record = await readRecord();
+  record[LEADERBOARD_KEY] = next;
+  await writeRecord(record);
+  return next;
+}
+
+function sanitizeScoreEntry(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const game = typeof payload.game === 'string' ? payload.game : '';
+  if (!SCORE_GAMES.has(game)) return null;
+  const name = sanitizeGuestbookText(payload.name, 16);
+  if (name.length < 2) return null;
+  const score = Number(payload.score);
+  if (!Number.isFinite(score) || score <= 0 || score > 1_000_000) return null;
+  return {
+    id: typeof payload.id === 'string' && payload.id.length <= 64 ? payload.id : randomUUID(),
+    game,
+    name,
+    score: Math.trunc(score),
+    date: new Date().toISOString(),
+  };
 }
 
 async function readRecord() {
@@ -240,7 +383,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { action, password, newPassword, entry, backup } = req.body ?? {};
+      const { action, password, newPassword, entry: guestbookBody, score: scoreBody, game, name, id, score, backup } = req.body ?? {};
 
       if (action === 'login') {
         if (!rateLimit(`login:${clientKey(req)}`, RATE_LIMITS.login)) {
@@ -260,6 +403,25 @@ export default async function handler(req, res) {
         }
         setSessionCookie(res);
         return send(res, 200, { ok: true });
+      }
+
+      if (action === 'scores') {
+        // Public read. No session: this is the whole point of a shared board.
+        return send(res, 200, { scores: await readScoreBoard() });
+      }
+
+      if (action === 'score') {
+        const entry_ = { game, name, score, id };
+        if (!scoreStoreId()) {
+          return send(res, 503, { error: 'Shared scores are not configured.' });
+        }
+        if (!rateLimit(`score:${clientKey(req)}`, RATE_LIMITS.score)) {
+          return send(res, 429, { error: 'Too many scores from this device. Try again in a minute.' });
+        }
+        const entry = sanitizeScoreEntry(entry_);
+        if (!entry) return send(res, 400, { error: 'Invalid score' });
+        await appendScore(entry);
+        return send(res, 200, { ok: true, score: entry });
       }
 
       if (action === 'logout') {
@@ -283,23 +445,23 @@ export default async function handler(req, res) {
           return send(res, 429, { error: 'Too many messages from this device. Try again in a minute.' });
         }
         // Honeypot: a real browser leaves this hidden field empty.
-        if (entry && typeof entry.website === 'string' && entry.website.trim()) {
-          return send(res, 200, { entry: { id: entry.id ?? randomUUID(), name: '', message: '', date: new Date().toISOString(), avatar: '', approved: false } });
+        if (guestbookBody && typeof guestbookBody.website === 'string' && guestbookBody.website.trim()) {
+          return send(res, 200, { entry: { id: guestbookBody.id ?? randomUUID(), name: '', message: '', date: new Date().toISOString(), avatar: '', approved: false } });
         }
-        if (!entry || typeof entry.name !== 'string' || typeof entry.message !== 'string') {
+        if (!guestbookBody || typeof guestbookBody.name !== 'string' || typeof guestbookBody.message !== 'string') {
           return send(res, 400, { error: 'Invalid guestbook entry' });
         }
-        const name = sanitizeGuestbookText(entry.name, GUESTBOOK_NAME_MAX_LENGTH);
-        const message = sanitizeGuestbookText(entry.message, GUESTBOOK_MAX_LENGTH);
-        if (!name || !message) return send(res, 400, { error: 'Name and message are required' });
+        const guestName = sanitizeGuestbookText(guestbookBody.name, GUESTBOOK_NAME_MAX_LENGTH);
+        const message = sanitizeGuestbookText(guestbookBody.message, GUESTBOOK_MAX_LENGTH);
+        if (!guestName || !message) return send(res, 400, { error: 'Name and message are required' });
 
         const record = await readRecord();
         const savedEntry = {
-          id: typeof entry.id === 'string' ? entry.id : randomUUID(),
-          name,
+          id: typeof guestbookBody.id === 'string' ? guestbookBody.id : randomUUID(),
+          name: guestName,
           message,
           date: new Date().toISOString(),
-          avatar: name.charAt(0).toUpperCase(),
+          avatar: guestName.charAt(0).toUpperCase(),
           approved: guestbookApprovalDefault(),
         };
         record.guestbook = [savedEntry, ...(Array.isArray(record.guestbook) ? record.guestbook : [])];
@@ -361,10 +523,19 @@ export default async function handler(req, res) {
       // PUT allows, and `__adminAuth` is always carried over from the stored
       // hash rather than anything the client sent.
       const previous = await readRecord();
+      const storedBoard = Array.isArray(previous[LEADERBOARD_KEY]) ? previous[LEADERBOARD_KEY] : [];
       const record = {
         ...withoutAuth(body.data),
         sectionOrder: validOrder(body.sectionOrder),
         sectionVisibility: validVisibility(body.sectionVisibility),
+        // An admin save must never destroy the leaderboard. The browser sent
+        // whatever it loaded when the panel opened, so any score submitted in
+        // the meantime exists only on the server; unioning keeps both. This is
+        // the one direction that really matters, because losing a poem to a
+        // game score is unrecoverable, while losing a score is just a replay.
+        ...(storedBoard.length > 0 || Array.isArray(body.data?.[LEADERBOARD_KEY])
+          ? { [LEADERBOARD_KEY]: unionBoards(storedBoard, body.data?.[LEADERBOARD_KEY]) }
+          : {}),
         ...(previous.__adminAuth ? { __adminAuth: previous.__adminAuth } : {}),
       };
       await writeRecord(record);
